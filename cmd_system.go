@@ -280,6 +280,7 @@ func printHelp() {
 	fmt.Println("    query <text>      Search the skill graph (agent-first, use --json)")
 	fmt.Println("    related <id|name>  Get skills connected to a given skill")
 	fmt.Println("    recommend <task>  Get skill recommendations for a task description")
+	fmt.Println("    setup [--sync-dir <dir>]  Configure repo for agent skill discovery (AGENTS.md + bridges + skill)")
 	fmt.Println("    serve [--port <n>] [--sync-dir <dir>] [--auto-sync]  Start daemon with embedded graph explorer UI")
 	fmt.Println("    status            Show system status")
 	fmt.Println("    config            Show configuration and storage location")

@@ -97,6 +97,8 @@ func main() {
 		handleRelated(&cfg)
 	case "recommend":
 		handleRecommend(&cfg)
+	case "setup":
+		handleSetup(&cfg)
 	case "serve":
 		handleServe(&cfg)
 	default:
