@@ -4,6 +4,7 @@
   const panel = document.getElementById('panel');
   const panelContent = document.getElementById('panel-content');
   const copyBtn = document.getElementById('copy-md');
+  const closeBtn = document.getElementById('panel-close');
   const copyVisibleBtn = document.getElementById('copy-visible-paths');
   const syncBtn = document.getElementById('sync-btn');
 
