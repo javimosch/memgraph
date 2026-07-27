@@ -127,6 +127,21 @@ func getRelatedForNode(nodeID string, relatedMap map[string][]GraphEdge, lookup 
 	return related
 }
 
+var queryStopWords = map[string]bool{
+	"the": true, "a": true, "an": true, "to": true, "of": true, "in": true,
+	"for": true, "on": true, "at": true, "by": true, "with": true, "from": true,
+	"add": true, "new": true, "how": true, "what": true, "is": true, "are": true,
+	"was": true, "were": true, "be": true, "been": true, "being": true,
+	"this": true, "that": true, "these": true, "those": true,
+	"it": true, "its": true, "i": true, "we": true, "you": true,
+	"do": true, "does": true, "did": true, "can": true, "could": true,
+	"will": true, "would": true, "should": true, "shall": true,
+	"and": true, "or": true, "but": true, "not": true, "no": true,
+	"called": true, "named": true, "about": true, "into": true,
+	"my": true, "me": true, "use": true, "using": true, "setup": true,
+	"set": true, "get": true, "make": true, "create": true,
+}
+
 func scoreNode(node Memory, query string) float64 {
 	q := strings.ToLower(query)
 	name := strings.ToLower(node.Name)
@@ -150,10 +165,10 @@ func scoreNode(node Memory, query string) float64 {
 	if strings.Contains(project, q) {
 		score += 20
 	}
-	// Word-level matches
+	// Word-level matches (skip stop words)
 	queryWords := strings.Fields(q)
 	for _, qw := range queryWords {
-		if len(qw) < 2 {
+		if len(qw) < 2 || queryStopWords[qw] {
 			continue
 		}
 		if strings.Contains(name, qw) {
@@ -453,7 +468,7 @@ func handleRecommend(cfg *Config) {
 				otherID = e.Source
 			}
 			if otherScore, ok := scoreByID[otherID]; ok {
-				results[i].score += otherScore * 0.15
+				results[i].score += otherScore * 0.05
 			}
 		}
 	}
