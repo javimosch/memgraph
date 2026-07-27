@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 )
@@ -49,25 +50,42 @@ type RecommendResult struct {
 }
 
 func loadGraphForQuery(cfg *Config) (*GraphIndex, map[string]Memory, error) {
-	graphPath := cfg.MemoryDir
-	if _, err := os.Stat(graphPath); os.IsNotExist(err) {
-		// Try default skills-graph path
-		graphPath = getDefaultMemoryDir()
-		if _, err := os.Stat(graphPath); os.IsNotExist(err) {
-			return nil, nil, fmt.Errorf("no graph found — run 'memgraph serve --sync-dir <dir>' or 'memgraph graph-from-dir <dir>' first")
+	// Try the configured memory dir first
+	candidates := []string{cfg.MemoryDir}
+
+	// Add the global ~/.memgraph/skills-graph path
+	if home, err := os.UserHomeDir(); err == nil {
+		candidates = append(candidates,
+			filepath.Join(home, ".memgraph", "skills-graph"),
+			filepath.Join(home, ".sick-memory", "skills-graph"),
+		)
+		// Also scan ~/.memgraph/*/graph.json for any graph dirs
+		globalDir := filepath.Join(home, ".memgraph")
+		if entries, err := os.ReadDir(globalDir); err == nil {
+			for _, e := range entries {
+				if e.IsDir() {
+					candidates = append(candidates, filepath.Join(globalDir, e.Name()))
+				}
+			}
 		}
 	}
 
-	graph, err := loadGraphIndex(graphPath)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to load graph: %w", err)
+	for _, path := range candidates {
+		graphFile := filepath.Join(path, "graph.json")
+		if _, err := os.Stat(graphFile); err == nil {
+			graph, err := loadGraphIndex(path)
+			if err != nil {
+				return nil, nil, fmt.Errorf("failed to load graph from %s: %w", path, err)
+			}
+			lookup := make(map[string]Memory, len(graph.Nodes))
+			for _, n := range graph.Nodes {
+				lookup[n.ID] = n
+			}
+			return graph, lookup, nil
+		}
 	}
 
-	lookup := make(map[string]Memory, len(graph.Nodes))
-	for _, n := range graph.Nodes {
-		lookup[n.ID] = n
-	}
-	return graph, lookup, nil
+	return nil, nil, fmt.Errorf("no graph found — run 'memgraph serve --sync-dir <dir>' or 'memgraph graph-from-dir <dir>' first")
 }
 
 func buildRelatedMap(graph *GraphIndex) map[string][]GraphEdge {
