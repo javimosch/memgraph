@@ -13,7 +13,8 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
   let scene, camera, renderer, controls;
   let nodeMeshes = [];
-  let nodeGlows = [];
+  let glowPoints = null;
+  let glowData = [];
   let nodeLabels = [];
   let edgeLines = [];
   let allEdges = [];
@@ -23,6 +24,27 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
   let currentMarkdown = '';
   let starField = null;
   let dustField = null;
+  let glowTexture = null;
+
+  function makeGlowTexture() {
+    if (glowTexture) return glowTexture;
+    const size = 64;
+    const canvas = document.createElement('canvas');
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext('2d');
+    const grad = ctx.createRadialGradient(size/2, size/2, 0, size/2, size/2, size/2);
+    grad.addColorStop(0, 'rgba(255,255,255,1)');
+    grad.addColorStop(0.2, 'rgba(255,255,255,0.6)');
+    grad.addColorStop(0.5, 'rgba(255,255,255,0.15)');
+    grad.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, size, size);
+    glowTexture = new THREE.CanvasTexture(canvas);
+    glowTexture.minFilter = THREE.LinearFilter;
+    glowTexture.magFilter = THREE.LinearFilter;
+    return glowTexture;
+  }
 
   function projectColor(project) {
     if (!project) return { r: 0.5, g: 0.69, b: 0.41 };
@@ -169,9 +191,13 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
     }
 
     nodeMeshes = [];
-    nodeGlows = [];
+    glowData = [];
     nodeLabels = [];
     nodeMap = {};
+
+    const glowPositions = [];
+    const glowColors = [];
+    const glowSizes = [];
 
     for (const n of graph.nodes) {
       const p = pos[n.id] || { x: 0, y: 0 };
@@ -181,7 +207,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
       const size = isNs ? 3.5 : 1.2 + Math.min(degrees[n.id] || 0, 20) * 0.12;
 
       // Core star
-      const geo = new THREE.SphereGeometry(size, isNs ? 16 : 8, isNs ? 16 : 8);
+      const geo = new THREE.SphereGeometry(size, isNs ? 12 : 6, isNs ? 12 : 6);
       const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 1.0 });
       const mesh = new THREE.Mesh(geo, mat);
       mesh.position.set(p.x, p.y, 0);
@@ -194,18 +220,12 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
       nodeMeshes.push(mesh);
       nodeMap[n.id] = mesh;
 
-      // Glow halo
-      const glowSize = size * (isNs ? 4 : 3);
-      const glowGeo = new THREE.SphereGeometry(glowSize, 8, 8);
-      const glowMat = new THREE.MeshBasicMaterial({
-        color, transparent: true, opacity: isNs ? 0.25 : 0.15,
-        blending: THREE.AdditiveBlending, depthWrite: false
-      });
-      const glow = new THREE.Mesh(glowGeo, glowMat);
-      glow.position.set(p.x, p.y, 0);
-      glow.userData = { nodeId: n.id, visible: true, baseOpacity: glowMat.opacity };
-      scene.add(glow);
-      nodeGlows.push(glow);
+      // Glow point (batched into single Points cloud)
+      const glowSize = isNs ? 18 : 10;
+      glowPositions.push(p.x, p.y, 0);
+      glowColors.push(col.r, col.g, col.b);
+      glowSizes.push(glowSize);
+      glowData.push({ nodeId: n.id, visible: true, baseOpacity: isNs ? 0.4 : 0.25 });
 
       // Label
       const labelText = n.name || n.id;
@@ -217,6 +237,18 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
       scene.add(label);
       nodeLabels.push(label);
     }
+
+    // Single Points cloud for all glows (1 draw call instead of N)
+    const glowGeo = new THREE.BufferGeometry();
+    glowGeo.setAttribute('position', new THREE.Float32BufferAttribute(glowPositions, 3));
+    glowGeo.setAttribute('color', new THREE.Float32BufferAttribute(glowColors, 3));
+    const glowMat = new THREE.PointsMaterial({
+      size: 20, map: makeGlowTexture(), vertexColors: true,
+      transparent: true, opacity: 0.35, sizeAttenuation: true,
+      blending: THREE.AdditiveBlending, depthWrite: false
+    });
+    glowPoints = new THREE.Points(glowGeo, glowMat);
+    scene.add(glowPoints);
 
     // Edges as faint nebula filaments
     const edgePositions = [];
@@ -300,17 +332,19 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
   function updateFilter() {
     const q = searchInput.value.trim().toLowerCase();
+    const visibleIds = new Set();
     for (const m of nodeMeshes) {
       const d = m.userData;
-      if (!q) { d.visible = true; m.visible = true; continue; }
+      if (!q) { d.visible = true; m.visible = true; visibleIds.add(d.id); continue; }
       const inName = (d.name || '').toLowerCase().includes(q);
       const inProject = (d.project || '').toLowerCase().includes(q);
       const inTags = (d.tags || []).some(t => t.toLowerCase().includes(q));
       d.visible = inName || inProject || inTags;
       m.visible = d.visible;
+      if (d.visible) visibleIds.add(d.id);
     }
-    for (const g of nodeGlows) g.visible = nodeMap[g.userData.nodeId] && nodeMap[g.userData.nodeId].visible;
-    for (const lbl of nodeLabels) lbl.visible = nodeMap[lbl.userData.nodeId] && nodeMap[lbl.userData.nodeId].visible;
+    for (const lbl of nodeLabels) lbl.visible = visibleIds.has(lbl.userData.nodeId);
+    for (const gd of glowData) gd.visible = visibleIds.has(gd.nodeId);
     rebuildEdgeGeometry();
   }
 
@@ -334,15 +368,9 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
     if (intersects.length > 0) {
       const node = intersects[0].object;
       if (hoveredNode !== node) {
-        if (hoveredNode) {
-          hoveredNode.material.opacity = 1.0;
-          const hg = nodeGlows.find(g => g.userData.nodeId === hoveredNode.userData.id);
-          if (hg) hg.material.opacity = hg.userData.baseOpacity;
-        }
+        if (hoveredNode) hoveredNode.material.opacity = 1.0;
         hoveredNode = node;
         hoveredNode.material.opacity = 1.5;
-        const hg = nodeGlows.find(g => g.userData.nodeId === node.userData.id);
-        if (hg) hg.material.opacity = 0.5;
         tooltip.classList.remove('hidden');
         tooltip.textContent = node.userData.name || node.userData.id;
       }
@@ -352,8 +380,6 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
     } else {
       if (hoveredNode) {
         hoveredNode.material.opacity = 1.0;
-        const hg = nodeGlows.find(g => g.userData.nodeId === hoveredNode.userData.id);
-        if (hg) hg.material.opacity = hg.userData.baseOpacity;
         hoveredNode = null;
       }
       tooltip.classList.add('hidden');
@@ -418,18 +444,17 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
   function clearScene() {
     for (const m of nodeMeshes) { scene.remove(m); m.geometry.dispose(); m.material.dispose(); }
-    for (const g of nodeGlows) { scene.remove(g); g.geometry.dispose(); g.material.dispose(); }
     for (const lbl of nodeLabels) { scene.remove(lbl); if (lbl.material) lbl.material.dispose(); }
     for (const el of edgeLines) { scene.remove(el.line); el.geo.dispose(); }
-    nodeMeshes = []; nodeGlows = []; nodeLabels = []; edgeLines = []; nodeMap = {};
+    if (glowPoints) { scene.remove(glowPoints); glowPoints.geometry.dispose(); glowPoints.material.dispose(); glowPoints = null; }
+    nodeMeshes = []; glowData = []; nodeLabels = []; edgeLines = []; nodeMap = {};
   }
 
   function createStarField() {
-    const count = 3000;
+    const count = 1500;
     const geo = new THREE.BufferGeometry();
     const positions = new Float32Array(count * 3);
     const colors = new Float32Array(count * 3);
-    const sizes = new Float32Array(count);
     for (let i = 0; i < count; i++) {
       const r = 200 + Math.random() * 1800;
       const a = Math.random() * Math.PI * 2;
@@ -441,7 +466,6 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
       if (tint < 0.6) { colors[i*3] = intensity; colors[i*3+1] = intensity; colors[i*3+2] = intensity; }
       else if (tint < 0.85) { colors[i*3] = intensity * 0.7; colors[i*3+1] = intensity * 0.85; colors[i*3+2] = intensity; }
       else { colors[i*3] = intensity; colors[i*3+1] = intensity * 0.8; colors[i*3+2] = intensity * 0.5; }
-      sizes[i] = 0.5 + Math.random() * 1.5;
     }
     geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
     geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
@@ -451,7 +475,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
   }
 
   function createDustField() {
-    const count = 800;
+    const count = 400;
     const geo = new THREE.BufferGeometry();
     const positions = new Float32Array(count * 3);
     const colors = new Float32Array(count * 3);
@@ -494,8 +518,10 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
     controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
     controls.dampingFactor = 0.08;
-    controls.enableRotate = false; // 2D mode: no rotation
+    controls.enableRotate = false;
     controls.enablePan = true;
+    controls.mouseButtons = { LEFT: THREE.MOUSE.PAN, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.PAN };
+    controls.touches = { ONE: THREE.TOUCH.PAN, TWO: THREE.TOUCH.DOLLY_PAN };
 
     raycaster = new THREE.Raycaster();
     mouse = new THREE.Vector2();
@@ -518,29 +544,26 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
     document.body.appendChild(info);
 
     let frame = 0;
+    let lastLabelScale = -1;
     function animate() {
       requestAnimationFrame(animate);
       controls.update();
       frame++;
-      // Twinkle stars
-      if (starField && frame % 3 === 0) {
+      // Twinkle stars (cheap: single material update)
+      if (starField && frame % 6 === 0) {
         starField.material.opacity = 0.5 + Math.sin(frame * 0.02) * 0.1;
       }
-      // Slow dust drift
+      // Slow dust drift (cheap: single rotation)
       if (dustField) dustField.rotation.z += 0.0003;
-      // Pulse glows
-      for (let i = 0; i < nodeGlows.length; i++) {
-        const g = nodeGlows[i];
-        if (!g.visible) continue;
-        const pulse = Math.sin(frame * 0.03 + i * 0.5) * 0.05;
-        g.material.opacity = g.userData.baseOpacity + pulse;
-      }
-      // Label distance scaling
+      // Label distance scaling — only when camera distance changed significantly
       const camDist = camera.position.distanceTo(controls.target);
-      for (const lbl of nodeLabels) {
-        if (!lbl.visible) continue;
-        const distScale = Math.max(0.5, Math.min(2.5, camDist / 250));
-        lbl.scale.set(lbl.material.map.image.width * 0.12 * distScale, lbl.material.map.image.height * 0.12 * distScale, 1);
+      const distScale = Math.max(0.5, Math.min(2.5, camDist / 250));
+      if (Math.abs(distScale - lastLabelScale) > 0.01) {
+        lastLabelScale = distScale;
+        for (const lbl of nodeLabels) {
+          if (!lbl.visible) continue;
+          lbl.scale.set(lbl.material.map.image.width * 0.12 * distScale, lbl.material.map.image.height * 0.12 * distScale, 1);
+        }
       }
       renderer.render(scene, camera);
     }
