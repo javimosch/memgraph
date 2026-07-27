@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"sort"
@@ -142,7 +143,7 @@ var queryStopWords = map[string]bool{
 	"set": true, "get": true, "make": true, "create": true,
 }
 
-func scoreNode(node Memory, query string) float64 {
+func scoreNode(node Memory, query string, idf map[string]float64) float64 {
 	q := strings.ToLower(query)
 	name := strings.ToLower(node.Name)
 	desc := strings.ToLower(node.Description)
@@ -165,28 +166,150 @@ func scoreNode(node Memory, query string) float64 {
 	if strings.Contains(project, q) {
 		score += 20
 	}
-	// Word-level matches (skip stop words)
+	// Word-level matches (skip stop words, use word-boundary matching, IDF-weighted)
 	queryWords := strings.Fields(q)
 	for _, qw := range queryWords {
-		if len(qw) < 2 || queryStopWords[qw] {
+		if len(qw) < 3 || queryStopWords[qw] {
 			continue
 		}
-		if strings.Contains(name, qw) {
-			score += 15
+		// IDF weight: rare terms score higher, common terms score lower
+		weight := idf[qw]
+		if weight == 0 {
+			weight = 1.0
 		}
-		if strings.Contains(desc, qw) {
-			score += 8
+		if containsWord(name, qw) {
+			score += 25 * weight
 		}
-		if strings.Contains(project, qw) {
-			score += 5
+		if containsWord(desc, qw) {
+			score += 5 * weight
+		}
+		if containsWord(project, qw) {
+			score += 5 * weight
 		}
 		for _, tag := range node.Tags {
-			if strings.Contains(strings.ToLower(tag), qw) {
-				score += 10
+			if containsWord(strings.ToLower(tag), qw) {
+				score += 10 * weight
 			}
 		}
 	}
 	return score
+}
+
+// computeIDF calculates inverse document frequency for each query word.
+// Words that appear in many skills get a low weight; rare words get a high weight.
+func computeIDF(graph *GraphIndex, queryWords []string) map[string]float64 {
+	totalDocs := len(graph.Nodes)
+	if totalDocs == 0 {
+		totalDocs = 1
+	}
+	docFreq := make(map[string]int)
+	for _, n := range graph.Nodes {
+		if n.Type == "namespace" {
+			continue
+		}
+		name := strings.ToLower(n.Name)
+		desc := strings.ToLower(n.Description)
+		project := strings.ToLower(n.Project)
+		combined := name + " " + desc + " " + project
+		for _, qw := range queryWords {
+			if len(qw) < 3 || queryStopWords[qw] {
+				continue
+			}
+			if containsWord(combined, qw) {
+				docFreq[qw]++
+			}
+		}
+	}
+	idf := make(map[string]float64)
+	for _, qw := range queryWords {
+		if len(qw) < 3 || queryStopWords[qw] {
+			continue
+		}
+		df := docFreq[qw]
+		if df == 0 {
+			idf[qw] = 3.0 // rare term not found in any skill
+		} else {
+			// Standard IDF: log(N / df), clamped to [0.2, 5.0]
+			idf[qw] = math.Log(float64(totalDocs) / float64(df))
+			if idf[qw] < 0.2 {
+				idf[qw] = 0.2
+			}
+			if idf[qw] > 5.0 {
+				idf[qw] = 5.0
+			}
+		}
+	}
+	return idf
+}
+
+// containsWord checks if text contains word as a whole word (boundary match).
+// Also handles simple stemming: "backups" matches "backup", "deploying" matches "deploy".
+func containsWord(text, word string) bool {
+	if text == word {
+		return true
+	}
+	// Try exact word boundary match first
+	if hasWordBoundary(text, word) {
+		return true
+	}
+	// Simple stemming: strip trailing "s" (plural → singular)
+	if strings.HasSuffix(word, "s") && len(word) > 3 {
+		singular := word[:len(word)-1]
+		if hasWordBoundary(text, singular) {
+			return true
+		}
+	}
+	// Simple stemming: strip trailing "ing"
+	if strings.HasSuffix(word, "ing") && len(word) > 4 {
+		base := word[:len(word)-3]
+		if hasWordBoundary(text, base) {
+			return true
+		}
+	}
+	// Prefix match for 3+ char words: "a2a" matches "a2a-dev", "mongo" matches "mongodb"
+	if len(word) >= 3 {
+		words := strings.FieldsFunc(text, func(c rune) bool {
+			return c == ' ' || c == '-' || c == '_' || c == '.' || c == ',' || c == '/' || c == '(' || c == ')'
+		})
+		for _, w := range words {
+			if strings.HasPrefix(w, word) && len(w) <= len(word)+4 {
+				return true
+			}
+			if strings.HasPrefix(word, w) && len(word) <= len(w)+4 {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func hasWordBoundary(text, word string) bool {
+	if text == word {
+		return true
+	}
+	idx := strings.Index(text, word)
+	for idx >= 0 {
+		end := idx + len(word)
+		leftOK := idx == 0 || !isWordChar(text[idx-1])
+		rightOK := end == len(text) || !isWordChar(text[end])
+		if leftOK && rightOK {
+			return true
+		}
+		next := idx + 1
+		if next >= len(text) {
+			break
+		}
+		idx = strings.Index(text[next:], word)
+		if idx < 0 {
+			break
+		}
+		idx = next + idx
+	}
+	return false
+}
+
+func isWordChar(c byte) bool {
+	return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')
 }
 
 func handleQuery(cfg *Config) {
@@ -227,6 +350,7 @@ func handleQuery(cfg *Config) {
 	}
 
 	relatedMap := buildRelatedMap(graph)
+	idf := computeIDF(graph, strings.Fields(strings.ToLower(query)))
 
 	type scored struct {
 		node  Memory
@@ -237,7 +361,7 @@ func handleQuery(cfg *Config) {
 		if n.Type == "namespace" {
 			continue
 		}
-		s := scoreNode(n, query)
+		s := scoreNode(n, query, idf)
 		if s > 0 {
 			results = append(results, scored{node: n, score: s})
 		}
@@ -440,6 +564,7 @@ func handleRecommend(cfg *Config) {
 	relatedMap := buildRelatedMap(graph)
 
 	// Score all skill nodes
+	idf := computeIDF(graph, strings.Fields(strings.ToLower(task)))
 	type scored struct {
 		node  Memory
 		score float64
@@ -449,7 +574,7 @@ func handleRecommend(cfg *Config) {
 		if n.Type == "namespace" {
 			continue
 		}
-		s := scoreNode(n, task)
+		s := scoreNode(n, task, idf)
 		if s > 0 {
 			results = append(results, scored{node: n, score: s})
 		}
