@@ -141,6 +141,9 @@ var queryStopWords = map[string]bool{
 	"called": true, "named": true, "about": true, "into": true,
 	"my": true, "me": true, "use": true, "using": true, "setup": true,
 	"set": true, "get": true, "make": true, "create": true,
+	"server": true, "system": true, "app": true, "application": true,
+	"tool": true, "cli": true, "config": true, "help": true,
+	"need": true, "want": true, "like": true, "also": true,
 }
 
 func scoreNode(node Memory, query string, idf map[string]float64) float64 {
@@ -169,7 +172,17 @@ func scoreNode(node Memory, query string, idf map[string]float64) float64 {
 	// Word-level matches (skip stop words, use word-boundary matching, IDF-weighted)
 	queryWords := strings.Fields(q)
 	for _, qw := range queryWords {
-		if len(qw) < 3 || queryStopWords[qw] {
+		if len(qw) < 3 {
+			continue
+		}
+		// Check stop words on both the word and its singular form
+		if queryStopWords[qw] {
+			continue
+		}
+		if strings.HasSuffix(qw, "s") && len(qw) > 3 && queryStopWords[qw[:len(qw)-1]] {
+			continue
+		}
+		if strings.HasSuffix(qw, "ing") && len(qw) > 4 && queryStopWords[qw[:len(qw)-3]] {
 			continue
 		}
 		// IDF weight: rare terms score higher, common terms score lower
@@ -212,7 +225,16 @@ func computeIDF(graph *GraphIndex, queryWords []string) map[string]float64 {
 		project := strings.ToLower(n.Project)
 		combined := name + " " + desc + " " + project
 		for _, qw := range queryWords {
-			if len(qw) < 3 || queryStopWords[qw] {
+			if len(qw) < 3 {
+				continue
+			}
+			if queryStopWords[qw] {
+				continue
+			}
+			if strings.HasSuffix(qw, "s") && len(qw) > 3 && queryStopWords[qw[:len(qw)-1]] {
+				continue
+			}
+			if strings.HasSuffix(qw, "ing") && len(qw) > 4 && queryStopWords[qw[:len(qw)-3]] {
 				continue
 			}
 			if containsWord(combined, qw) {
@@ -222,7 +244,16 @@ func computeIDF(graph *GraphIndex, queryWords []string) map[string]float64 {
 	}
 	idf := make(map[string]float64)
 	for _, qw := range queryWords {
-		if len(qw) < 3 || queryStopWords[qw] {
+		if len(qw) < 3 {
+			continue
+		}
+		if queryStopWords[qw] {
+			continue
+		}
+		if strings.HasSuffix(qw, "s") && len(qw) > 3 && queryStopWords[qw[:len(qw)-1]] {
+			continue
+		}
+		if strings.HasSuffix(qw, "ing") && len(qw) > 4 && queryStopWords[qw[:len(qw)-3]] {
 			continue
 		}
 		df := docFreq[qw]

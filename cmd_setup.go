@@ -86,19 +86,22 @@ func handleSetup(cfg *Config) {
 
 	var actions []string
 
-	// 1. Ensure graph exists — ingest from sync-dir if provided
+	// 1. Ensure graph exists — ingest from sync-dir if provided, otherwise
+	// auto-discover all standard skill directories
+	graphDir := filepath.Join(getGlobalMemgraphDir(), "skills-graph")
+	var syncDirs []string
 	if syncDir != "" {
-		resolvedDir := expandHomeDir(syncDir)
-		if _, err := os.Stat(resolvedDir); os.IsNotExist(err) {
-			fmt.Fprintf(os.Stderr, "Warning: sync dir not found: %s\n", resolvedDir)
+		syncDirs = parseSyncDirs(syncDir)
+	} else {
+		syncDirs = discoverSkillDirs()
+	}
+
+	if len(syncDirs) > 0 {
+		_, _, _, err := ingestMultiDir(syncDirs, graphDir, cfg)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: ingestion failed: %v\n", err)
 		} else {
-			graphDir := filepath.Join(getGlobalMemgraphDir(), "skills-graph")
-			_, _, _, err := ingestSkillsDir(resolvedDir, graphDir, "", cfg)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "Warning: ingestion failed: %v\n", err)
-			} else {
-				actions = append(actions, fmt.Sprintf("Ingested skills from %s into graph", resolvedDir))
-			}
+			actions = append(actions, fmt.Sprintf("Ingested skills from %d directories into graph", len(syncDirs)))
 		}
 	}
 
@@ -156,6 +159,27 @@ func handleSetup(cfg *Config) {
 		fmt.Println("Agents in this repo will now discover and use memgraph for skill lookup.")
 		fmt.Println("They'll run 'memgraph recommend \"<task>\"' before starting work.")
 	}
+}
+
+// discoverSkillDirs finds all standard agent skill directories on the system.
+func discoverSkillDirs() []string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return nil
+	}
+	candidates := []string{
+		filepath.Join(home, ".agents", "skills"),
+		filepath.Join(home, ".claude", "skills"),
+		filepath.Join(home, ".config", "devin", "skills"),
+		filepath.Join(home, ".codeium", "windsurf", "skills"),
+	}
+	var dirs []string
+	for _, d := range candidates {
+		if info, err := os.Stat(d); err == nil && info.IsDir() {
+			dirs = append(dirs, d)
+		}
+	}
+	return dirs
 }
 
 // upsertFileSection inserts or replaces a section in a markdown file.
