@@ -358,7 +358,65 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
     }
   }
 
+  let draggedNode = null;
+  let dragMoved = false;
+  let dragStartPos = null;
+  const dragPlane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
+  const dragIntersect = new THREE.Vector3();
+
+  function screenToWorld(event) {
+    const rect = renderer.domElement.getBoundingClientRect();
+    const ndc = new THREE.Vector2(
+      ((event.clientX - rect.left) / rect.width) * 2 - 1,
+      -((event.clientY - rect.top) / rect.height) * 2 + 1
+    );
+    raycaster.setFromCamera(ndc, camera);
+    raycaster.ray.intersectPlane(dragPlane, dragIntersect);
+    return dragIntersect.clone();
+  }
+
+  function onMouseDown(event) {
+    if (event.button !== 0) return; // left only
+    const rect = renderer.domElement.getBoundingClientRect();
+    mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+    mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+    raycaster.setFromCamera(mouse, camera);
+    const visible = nodeMeshes.filter(m => m.visible);
+    const intersects = raycaster.intersectObjects(visible);
+    if (intersects.length > 0) {
+      draggedNode = intersects[0].object;
+      dragMoved = false;
+      dragStartPos = { x: event.clientX, y: event.clientY };
+      controls.enabled = false; // disable pan while dragging a node
+      renderer.domElement.style.cursor = 'grabbing';
+    }
+  }
+
   function onMouseMove(event) {
+    if (draggedNode) {
+      const dx = event.clientX - dragStartPos.x;
+      const dy = event.clientY - dragStartPos.y;
+      if (!dragMoved && Math.hypot(dx, dy) > 4) dragMoved = true;
+      if (dragMoved) {
+        const world = screenToWorld(event);
+        draggedNode.position.set(world.x, world.y, 0);
+        // Move the matching glow point
+        const idx = nodeMeshes.indexOf(draggedNode);
+        if (glowPoints && idx >= 0) {
+          const arr = glowPoints.geometry.attributes.position.array;
+          arr[idx * 3] = world.x;
+          arr[idx * 3 + 1] = world.y;
+          glowPoints.geometry.attributes.position.needsUpdate = true;
+        }
+        // Move the label
+        const lbl = nodeLabels.find(l => l.userData.nodeId === draggedNode.userData.id);
+        if (lbl) lbl.position.set(world.x, world.y + draggedNode.userData.size + 4, 1);
+        // Update edges
+        rebuildEdgeGeometry();
+      }
+      return;
+    }
+
     const rect = renderer.domElement.getBoundingClientRect();
     mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
     mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
@@ -387,17 +445,16 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
     }
   }
 
-  function onClick(event) {
-    const rect = renderer.domElement.getBoundingClientRect();
-    mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-    mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-    raycaster.setFromCamera(mouse, camera);
-    const visible = nodeMeshes.filter(m => m.visible);
-    const intersects = raycaster.intersectObjects(visible);
-    if (intersects.length > 0) {
-      showPanel(intersects[0].object.userData.id);
-    } else {
-      panel.classList.add('hidden');
+  function onMouseUp(event) {
+    if (draggedNode) {
+      if (!dragMoved) {
+        // Treat as click — open panel
+        showPanel(draggedNode.userData.id);
+      }
+      draggedNode = null;
+      dragMoved = false;
+      controls.enabled = true;
+      renderer.domElement.style.cursor = 'grab';
     }
   }
 
@@ -526,8 +583,10 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
     raycaster = new THREE.Raycaster();
     mouse = new THREE.Vector2();
 
+    renderer.domElement.addEventListener('mousedown', onMouseDown);
     renderer.domElement.addEventListener('mousemove', onMouseMove);
-    renderer.domElement.addEventListener('click', onClick);
+    renderer.domElement.addEventListener('mouseup', onMouseUp);
+    window.addEventListener('mouseup', onMouseUp); // catch release outside canvas
 
     window.addEventListener('resize', () => {
       camera.aspect = container.clientWidth / container.clientHeight;
@@ -540,7 +599,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
     const info = document.createElement('div');
     info.id = 'galaxy-info';
-    info.textContent = 'Scroll to zoom · Drag to pan · Click a star to explore';
+    info.textContent = 'Drag a star to reposition · Drag empty space to pan · Scroll to zoom · Click for details';
     document.body.appendChild(info);
 
     let frame = 0;
