@@ -13,6 +13,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
   let scene, camera, renderer, controls;
   let nodeMeshes = [];
+  let nodeLabels = [];
   let edgeLines = [];
   let allEdges = [];
   let nodeData = [];
@@ -29,6 +30,42 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
     const c = new THREE.Color();
     c.setHSL(h / 360, 0.65, 0.48);
     return c.getHex();
+  }
+
+  const labelTextureCache = {};
+  function makeLabelTexture(text, fontSize, color) {
+    const key = `${fontSize}:${color}:${text}`;
+    if (labelTextureCache[key]) return labelTextureCache[key];
+
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    ctx.font = `${fontSize}px system-ui, sans-serif`;
+    const metrics = ctx.measureText(text);
+    const w = Math.ceil(metrics.width) + 6;
+    const h = fontSize + 4;
+    canvas.width = w;
+    canvas.height = h;
+    ctx.font = `${fontSize}px system-ui, sans-serif`;
+    ctx.fillStyle = 'rgba(15, 26, 18, 0.7)';
+    ctx.fillRect(0, 0, w, h);
+    ctx.fillStyle = color;
+    ctx.textBaseline = 'middle';
+    ctx.fillText(text, 3, h / 2);
+
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.minFilter = THREE.LinearFilter;
+    tex.magFilter = THREE.LinearFilter;
+    labelTextureCache[key] = tex;
+    return tex;
+  }
+
+  function makeLabel(text, fontSize, colorHex) {
+    const tex = makeLabelTexture(text, fontSize, colorHex);
+    const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false });
+    const sprite = new THREE.Sprite(mat);
+    sprite.scale.set(tex.image.width * 0.15, tex.image.height * 0.15, 1);
+    sprite.renderOrder = 999;
+    return sprite;
   }
 
   function escapeHtml(s) {
@@ -142,6 +179,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
     nodeData = [];
     nodeMap = {};
+    nodeLabels = [];
 
     for (const n of graph.nodes) {
       const p = pos[n.id] || { x: 0, y: 0, z: 0 };
@@ -162,6 +200,15 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
       nodeMeshes.push(mesh);
       nodeMap[n.id] = mesh;
       nodeData.push(mesh.userData);
+
+      const labelText = n.name || n.id;
+      const labelFontSize = isNs ? 48 : 32;
+      const labelColor = isNs ? '#e8f0e8' : '#c8d8c8';
+      const label = makeLabel(labelText, labelFontSize, labelColor);
+      label.position.set(p.x, p.y + size + 3, p.z);
+      label.userData = { nodeId: n.id, visible: true };
+      scene.add(label);
+      nodeLabels.push(label);
     }
 
     const edgeGeo = new THREE.BufferGeometry();
@@ -256,6 +303,9 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
       const inTags = (d.tags || []).some(t => t.toLowerCase().includes(q));
       d.visible = inName || inProject || inTags;
       m.visible = d.visible;
+    }
+    for (const lbl of nodeLabels) {
+      lbl.visible = nodeMap[lbl.userData.nodeId] && nodeMap[lbl.userData.nodeId].visible;
     }
     rebuildEdgeGeometry();
   }
@@ -355,8 +405,9 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
   function clearScene() {
     for (const m of nodeMeshes) { scene.remove(m); m.geometry.dispose(); m.material.dispose(); }
+    for (const lbl of nodeLabels) { scene.remove(lbl); if (lbl.material) lbl.material.dispose(); }
     for (const el of edgeLines) { scene.remove(el.line); el.geo.dispose(); }
-    nodeMeshes = []; edgeLines = []; nodeData = []; nodeMap = {};
+    nodeMeshes = []; nodeLabels = []; edgeLines = []; nodeData = []; nodeMap = {};
   }
 
   function initThree() {
@@ -406,6 +457,13 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
       requestAnimationFrame(animate);
       controls.update();
       scene.rotation.y += 0.0005;
+      const camDist = camera.position.distanceTo(controls.target);
+      for (const lbl of nodeLabels) {
+        if (!lbl.visible) continue;
+        const baseScale = 0.15;
+        const distScale = Math.max(0.4, Math.min(2.5, camDist / 200));
+        lbl.scale.set(lbl.material.map.image.width * baseScale * distScale, lbl.material.map.image.height * baseScale * distScale, 1);
+      }
       renderer.render(scene, camera);
     }
     animate();
