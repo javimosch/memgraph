@@ -91,6 +91,12 @@ func main() {
 		handleImport(&cfg)
 	case "graph-from-dir":
 		handleGraphFromDir(&cfg)
+	case "query":
+		handleQuery(&cfg)
+	case "related":
+		handleRelated(&cfg)
+	case "recommend":
+		handleRecommend(&cfg)
 	case "serve":
 		handleServe(&cfg)
 	default:
