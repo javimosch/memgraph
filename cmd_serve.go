@@ -264,14 +264,12 @@ func handleServe(cfg *Config) {
 		})
 	})
 	mux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.FS(staticFS))))
-	mux.HandleFunc("/v2", func(w http.ResponseWriter, r *http.Request) {
-		serveV2Index(w, r, staticFS)
-	})
-	mux.HandleFunc("/v3", func(w http.ResponseWriter, r *http.Request) {
-		serveFileFromFS(w, r, staticFS, "v3.html", "text/html; charset=utf-8")
-	})
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		serveIndex(w, r, staticFS)
+		if r.URL.Path != "/" {
+			http.NotFound(w, r)
+			return
+		}
+		serveFileFromFS(w, r, staticFS, "index.html", "text/html; charset=utf-8")
 	})
 
 	srv := &http.Server{
@@ -390,24 +388,6 @@ func apiSearchHandler(w http.ResponseWriter, r *http.Request, cfg *Config, index
 	if err := json.NewEncoder(w).Encode(results); err != nil && !isClientDisconnect(err) {
 		log.Printf("failed to encode search results: %v", err)
 	}
-}
-
-func serveIndex(w http.ResponseWriter, r *http.Request, staticFS fs.FS) {
-	if r.URL.Path != "/" {
-		http.NotFound(w, r)
-		return
-	}
-	data, err := fs.ReadFile(staticFS, "index.html")
-	if err != nil {
-		http.Error(w, "index missing", http.StatusInternalServerError)
-		return
-	}
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.Write(data)
-}
-
-func serveV2Index(w http.ResponseWriter, r *http.Request, staticFS fs.FS) {
-	serveFileFromFS(w, r, staticFS, "v2.html", "text/html; charset=utf-8")
 }
 
 func serveFileFromFS(w http.ResponseWriter, r *http.Request, staticFS fs.FS, name, contentType string) {
