@@ -20,7 +20,7 @@
 <body class="bg-[#0a0a0b] text-slate-100 font-sans">
   <div class="max-w-4xl mx-auto px-6 py-16">
     <h1 class="text-5xl font-bold text-white tracking-tight">memgraph-cli</h1>
-    <p class="text-slate-400 mt-3 text-lg">Visualize your AI agent skills as a living galaxy. Auto-syncs from <code class="text-slate-300">~/.agents/skills</code> and <code class="text-slate-300">~/handoffs</code>, builds a knowledge graph, and renders it as an interactive Via Lactea star map.</p>
+    <p class="text-slate-400 mt-3 text-lg">Visualize your AI agent skills as a living galaxy. Auto-syncs from <code class="text-slate-300">~/.agents/skills</code>, builds a knowledge graph, and renders it as an interactive Via Lactea star map.</p>
 
     <div class="mt-6 flex flex-wrap gap-3">
       <a href="https://github.com/javimosch/memgraph-cli" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-slate-800 text-slate-300 text-sm hover:bg-slate-700 transition-all">GitHub</a>
@@ -42,11 +42,11 @@
 
       <div class="p-6 bg-slate-900 rounded-xl border border-slate-800">
         <h2 class="text-xl font-semibold text-white">Auto-Sync</h2>
-        <p class="text-slate-400 mt-2 text-sm">Run <code class="text-slate-300">memgraph serve --auto-sync</code> and it watches <code class="text-slate-300">~/.agents/skills</code> and <code class="text-slate-300">~/handoffs</code> for changes, rebuilding the graph every 4 seconds. No restart needed.</p>
+        <p class="text-slate-400 mt-2 text-sm">Run <code class="text-slate-300">memgraph serve --auto-sync</code> and it watches <code class="text-slate-300">~/.agents/skills</code> for changes, rebuilding the graph every 4 seconds. No restart needed. Add custom directories with <code class="text-slate-300">--sync-dir</code>.</p>
         <pre class="mt-3 bg-slate-950 rounded-lg p-4 text-sm text-slate-300 overflow-x-auto"><code>./memgraph serve --auto-sync --port 8080
 
 # Custom directories (comma-separated):
-./memgraph serve --auto-sync --sync-dir ~/.agents/skills,~/handoffs,~/projects
+./memgraph serve --auto-sync --sync-dir ~/.agents/skills,~/projects/docs
 
 # Manual sync via API:
 curl -X POST http://localhost:8080/api/sync</code></pre>
