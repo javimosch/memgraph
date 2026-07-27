@@ -6,26 +6,28 @@ Features a phyllotaxis-spiral visual knowledge graph explorer, automatic skills 
 
 ## Features
 
-- **Spiral Graph Explorer**: Interactive web UI (`memgraph serve`) with phyllotaxis spiral layout, search, filters, and node inspector.
-- **Copy Visible Paths**: Filter skills/memories (e.g. search "rbm20"), hit `ENTER`, then copy all visible file paths to share directly with your agent.
-- **Auto-Sync (`--auto-sync`)**: Automatically monitors `~/.agents/skills` (or any custom directory) and updates the knowledge graph in real-time.
-- **Graph-From-Dir**: Ingest any directory of `SKILL.md` files into a relational knowledge graph (`references`, `similar`, `shared-keyword`).
+- **Galaxy Visualization**: Interactive Via Lactea star map (`memgraph serve`) — spiral arm layout, draggable stars, search, edge toggles.
+- **Agent-First CLI**: `memgraph query`, `memgraph related`, `memgraph recommend` — search the graph and get skill recommendations for any task, with JSON output for agent consumption.
+- **Copy Visible Paths**: Filter skills (e.g. search "rbm20"), hit `ENTER`, then copy all visible file paths to share directly with your agent.
+- **Auto-Sync**: `--sync-dir` monitors any directory and updates the knowledge graph in real-time. Comma-separated multiple directories supported.
+- **Graph-From-Dir**: Ingest any directory of `SKILL.md` or `.md` files into a relational knowledge graph (`references`, `similar`, `shared-keyword`).
 - **Centralized Storage**: All memories stored in `~/.memgraph/` with git-based project scoping.
 - **Agent Integration**: Works seamlessly with Claude Code, OpenCode, Copilot, and SuperCLI.
 
 ## Installation
 
+### One-line install (Linux x86_64)
+
+```bash
+curl -L https://github.com/javimosch/memgraph-cli/releases/latest/download/memgraph -o ~/.local/bin/memgraph && chmod +x ~/.local/bin/memgraph
+```
+
 ### From Source
 
 ```bash
-# Clone the repository
 git clone https://github.com/javimosch/memgraph-cli.git
 cd memgraph-cli
-
-# Build the binary
 go build -o memgraph .
-
-# Install to path
 cp memgraph ~/.local/bin/
 ```
 
