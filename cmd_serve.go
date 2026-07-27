@@ -177,14 +177,8 @@ func handleServe(cfg *Config) {
 	if opts.SyncDir != "" {
 		syncDirs = parseSyncDirs(opts.SyncDir)
 	}
-	if len(syncDirs) == 0 && opts.AutoSync {
-		syncDirs = []string{"~/.agents/skills", "~/handoffs"}
-	}
 	if len(syncDirs) == 0 && cfg.GlobalConfig.AutoSyncDir != "" {
 		syncDirs = parseSyncDirs(cfg.GlobalConfig.AutoSyncDir)
-	}
-	if len(syncDirs) == 0 && cfg.GlobalConfig.AutoSync {
-		syncDirs = []string{"~/.agents/skills", "~/handoffs"}
 	}
 
 	state := &serverState{
