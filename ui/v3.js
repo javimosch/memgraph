@@ -1,0 +1,564 @@
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+(function () {
+  const searchInput = document.getElementById('search');
+  const tooltip = document.getElementById('tooltip');
+  const panel = document.getElementById('panel');
+  const panelContent = document.getElementById('panel-content');
+  const copyBtn = document.getElementById('copy-md');
+  const closeBtn = document.getElementById('panel-close');
+  const copyVisibleBtn = document.getElementById('copy-visible-paths');
+  const syncBtn = document.getElementById('sync-btn');
+
+  let scene, camera, renderer, controls;
+  let nodeMeshes = [];
+  let nodeGlows = [];
+  let nodeLabels = [];
+  let edgeLines = [];
+  let allEdges = [];
+  let nodeMap = {};
+  let raycaster, mouse;
+  let hoveredNode = null;
+  let currentMarkdown = '';
+  let starField = null;
+  let dustField = null;
+
+  function projectColor(project) {
+    if (!project) return { r: 0.5, g: 0.69, b: 0.41 };
+    let h = 0;
+    for (let i = 0; i < project.length; i++) h = (h * 31 + project.charCodeAt(i)) % 360;
+    const c = new THREE.Color();
+    c.setHSL(h / 360, 0.7, 0.55);
+    return { r: c.r, g: c.g, b: c.b };
+  }
+
+  const labelTextureCache = {};
+  function makeLabelTexture(text, fontSize, color) {
+    const key = `${fontSize}:${color}:${text}`;
+    if (labelTextureCache[key]) return labelTextureCache[key];
+
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    ctx.font = `${fontSize}px system-ui, sans-serif`;
+    const metrics = ctx.measureText(text);
+    const w = Math.ceil(metrics.width) + 8;
+    const h = fontSize + 6;
+    canvas.width = w;
+    canvas.height = h;
+    ctx.font = `${fontSize}px system-ui, sans-serif`;
+    ctx.fillStyle = 'rgba(0, 0, 0, 0)';
+    ctx.fillRect(0, 0, w, h);
+    ctx.shadowColor = 'rgba(100, 180, 255, 0.9)';
+    ctx.shadowBlur = 4;
+    ctx.fillStyle = color;
+    ctx.textBaseline = 'middle';
+    ctx.fillText(text, 4, h / 2);
+
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.minFilter = THREE.LinearFilter;
+    tex.magFilter = THREE.LinearFilter;
+    labelTextureCache[key] = tex;
+    return tex;
+  }
+
+  function makeLabel(text, fontSize, colorHex) {
+    const tex = makeLabelTexture(text, fontSize, colorHex);
+    const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false, blending: THREE.AdditiveBlending });
+    const sprite = new THREE.Sprite(mat);
+    sprite.scale.set(tex.image.width * 0.12, tex.image.height * 0.12, 1);
+    sprite.renderOrder = 999;
+    return sprite;
+  }
+
+  function escapeHtml(s) {
+    return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+
+  function renderMarkdown(md) {
+    const parts = md.split(/```/);
+    let html = '';
+    for (let i = 0; i < parts.length; i++) {
+      if (i % 2 === 1) html += `<pre><code>${escapeHtml(parts[i])}</code></pre>`;
+      else html += `<p>${escapeHtml(parts[i]).replace(/\n/g, '<br>')}</p>`;
+    }
+    return html;
+  }
+
+  function showPanel(id) {
+    panel.classList.remove('hidden');
+    panelContent.innerHTML = '<p>Loading…</p>';
+    currentMarkdown = '';
+    fetch(`/api/nodes/${encodeURIComponent(id)}`)
+      .then(r => { if (!r.ok) throw new Error(r.statusText); return r.text(); })
+      .then(md => { currentMarkdown = md; panelContent.innerHTML = renderMarkdown(md); })
+      .catch(err => { panelContent.innerHTML = `<p style="color:#c77">Error: ${escapeHtml(err.message)}</p>`; });
+  }
+
+  copyBtn.addEventListener('click', () => {
+    if (currentMarkdown) {
+      navigator.clipboard.writeText(currentMarkdown).catch(() => {});
+      const orig = copyBtn.textContent;
+      copyBtn.textContent = 'Copied!';
+      setTimeout(() => copyBtn.textContent = orig, 1200);
+    }
+  });
+
+  closeBtn.addEventListener('click', () => panel.classList.add('hidden'));
+
+  // Galaxy-style layout: spiral arms with project clusters as star systems
+  function galaxyLayout(graph) {
+    const groups = {};
+    for (const n of graph.nodes) {
+      const p = n.project || 'general';
+      if (!groups[p]) groups[p] = { project: p, hub: null, members: [] };
+      if (n.type === 'namespace') groups[p].hub = n;
+      else groups[p].members.push(n);
+    }
+
+    const list = Object.values(groups).map(g => {
+      g.members.sort((a, b) => a.name.localeCompare(b.name));
+      g.count = g.members.length + (g.hub ? 1 : 0);
+      return g;
+    }).sort((a, b) => b.count - a.count);
+
+    const pos = {};
+    const numArms = 4;
+    const armSpacing = (Math.PI * 2) / numArms;
+    const galaxyRadius = 40 + Math.sqrt(list.length) * 35;
+    const coreRadius = 60;
+
+    for (let i = 0; i < list.length; i++) {
+      const g = list[i];
+      const arm = i % numArms;
+      const t = (i + 1) / list.length;
+      const distFromCore = coreRadius + t * galaxyRadius;
+      const spiralTightness = 2.2;
+      const baseAngle = arm * armSpacing + t * spiralTightness;
+      const jitter = (Math.sin(i * 7.13) * 0.15);
+      const angle = baseAngle + jitter;
+      const cx = Math.cos(angle) * distFromCore;
+      const cy = Math.sin(angle) * distFromCore;
+
+      if (g.hub) pos[g.hub.id] = { x: cx, y: cy };
+
+      const golden = 2.39996322972865332;
+      const spacing = 14;
+      for (let k = 0; k < g.members.length; k++) {
+        const r = 10 + spacing * Math.sqrt(k);
+        const a = k * golden + i * 0.3;
+        const m = g.members[k];
+        pos[m.id] = {
+          x: cx + Math.cos(a) * r,
+          y: cy + Math.sin(a) * r
+        };
+      }
+    }
+    return pos;
+  }
+
+  function buildGalaxy(graph) {
+    allEdges = graph.edges || [];
+    const pos = galaxyLayout(graph);
+
+    const degrees = {};
+    for (const n of graph.nodes) degrees[n.id] = 0;
+    for (const e of allEdges) {
+      degrees[e.source] = (degrees[e.source] || 0) + 1;
+      degrees[e.target] = (degrees[e.target] || 0) + 1;
+    }
+
+    nodeMeshes = [];
+    nodeGlows = [];
+    nodeLabels = [];
+    nodeMap = {};
+
+    for (const n of graph.nodes) {
+      const p = pos[n.id] || { x: 0, y: 0 };
+      const isNs = n.type === 'namespace';
+      const col = isNs ? { r: 1.0, g: 0.85, b: 0.4 } : projectColor(n.project);
+      const color = new THREE.Color(col.r, col.g, col.b);
+      const size = isNs ? 3.5 : 1.2 + Math.min(degrees[n.id] || 0, 20) * 0.12;
+
+      // Core star
+      const geo = new THREE.SphereGeometry(size, isNs ? 16 : 8, isNs ? 16 : 8);
+      const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 1.0 });
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.position.set(p.x, p.y, 0);
+      mesh.userData = {
+        id: n.id, name: n.name, type: n.type, project: n.project,
+        tags: n.tags, file_path: n.file_path, degree: degrees[n.id] || 0,
+        color, size, visible: true, baseSize: size
+      };
+      scene.add(mesh);
+      nodeMeshes.push(mesh);
+      nodeMap[n.id] = mesh;
+
+      // Glow halo
+      const glowSize = size * (isNs ? 4 : 3);
+      const glowGeo = new THREE.SphereGeometry(glowSize, 8, 8);
+      const glowMat = new THREE.MeshBasicMaterial({
+        color, transparent: true, opacity: isNs ? 0.25 : 0.15,
+        blending: THREE.AdditiveBlending, depthWrite: false
+      });
+      const glow = new THREE.Mesh(glowGeo, glowMat);
+      glow.position.set(p.x, p.y, 0);
+      glow.userData = { nodeId: n.id, visible: true, baseOpacity: glowMat.opacity };
+      scene.add(glow);
+      nodeGlows.push(glow);
+
+      // Label
+      const labelText = n.name || n.id;
+      const labelFontSize = isNs ? 44 : 28;
+      const labelColor = isNs ? '#ffe9a8' : '#a8c8ff';
+      const label = makeLabel(labelText, labelFontSize, labelColor);
+      label.position.set(p.x, p.y + size + 4, 1);
+      label.userData = { nodeId: n.id, visible: true };
+      scene.add(label);
+      nodeLabels.push(label);
+    }
+
+    // Edges as faint nebula filaments
+    const edgePositions = [];
+    const edgeColors = [];
+    const edgeMeta = [];
+    for (const e of allEdges) {
+      if (e.relation === 'shared-keyword') continue;
+      const s = pos[e.source], t = pos[e.target];
+      if (!s || !t) continue;
+      edgePositions.push(s.x, s.y, 0, t.x, t.y, 0);
+      let col;
+      if (e.relation === 'namespace') col = [0.6, 0.5, 0.3];
+      else if (e.relation === 'references') col = [0.3, 0.5, 0.7];
+      else if (e.relation === 'similar') col = [0.4, 0.6, 0.5];
+      else col = [0.5, 0.6, 0.8];
+      edgeColors.push(col[0], col[1], col[2], col[0], col[1], col[2]);
+      edgeMeta.push({ source: e.source, target: e.target, relation: e.relation, visible: e.relation !== 'similar' });
+    }
+
+    const edgeGeo = new THREE.BufferGeometry();
+    edgeGeo.setAttribute('position', new THREE.Float32BufferAttribute(edgePositions, 3));
+    edgeGeo.setAttribute('color', new THREE.Float32BufferAttribute(edgeColors, 3));
+    const edgeMat = new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.25, blending: THREE.AdditiveBlending });
+    const edgeLine = new THREE.LineSegments(edgeGeo, edgeMat);
+    scene.add(edgeLine);
+    edgeLines.push({ line: edgeLine, meta: edgeMeta, geo: edgeGeo });
+
+    fitCamera();
+  }
+
+  function fitCamera(targets) {
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    const nodes = targets || nodeMeshes;
+    for (const m of nodes) {
+      if (!m.userData.visible) continue;
+      const p = m.position;
+      if (p.x < minX) minX = p.x; if (p.x > maxX) maxX = p.x;
+      if (p.y < minY) minY = p.y; if (p.y > maxY) maxY = p.y;
+    }
+    if (minX === Infinity) { minX = -100; maxX = 100; minY = -100; maxY = 100; }
+    const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;
+    const dx = maxX - minX, dy = maxY - minY;
+    const dist = Math.max(dx, dy) * 0.6 + 80;
+    controls.target.set(cx, cy, 0);
+    camera.position.set(cx, cy, dist);
+    controls.update();
+  }
+
+  function toggleEdge(type, show) {
+    for (const el of edgeLines) {
+      for (let i = 0; i < el.meta.length; i++) {
+        if (el.meta[i].relation === type) el.meta[i].visible = show;
+      }
+    }
+    rebuildEdgeGeometry();
+  }
+
+  function rebuildEdgeGeometry() {
+    const positions = [];
+    const colors = [];
+    for (const el of edgeLines) {
+      for (const m of el.meta) {
+        if (!m.visible) continue;
+        const s = nodeMap[m.source], t = nodeMap[m.target];
+        if (!s || !t) continue;
+        if (!s.userData.visible || !t.userData.visible) continue;
+        positions.push(s.position.x, s.position.y, 0, t.position.x, t.position.y, 0);
+        let col;
+        if (m.relation === 'namespace') col = [0.6, 0.5, 0.3];
+        else if (m.relation === 'references') col = [0.3, 0.5, 0.7];
+        else if (m.relation === 'similar') col = [0.4, 0.6, 0.5];
+        else col = [0.5, 0.6, 0.8];
+        colors.push(col[0], col[1], col[2], col[0], col[1], col[2]);
+      }
+      el.geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+      el.geo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+      el.geo.attributes.position.needsUpdate = true;
+      el.geo.attributes.color.needsUpdate = true;
+    }
+  }
+
+  function updateFilter() {
+    const q = searchInput.value.trim().toLowerCase();
+    for (const m of nodeMeshes) {
+      const d = m.userData;
+      if (!q) { d.visible = true; m.visible = true; continue; }
+      const inName = (d.name || '').toLowerCase().includes(q);
+      const inProject = (d.project || '').toLowerCase().includes(q);
+      const inTags = (d.tags || []).some(t => t.toLowerCase().includes(q));
+      d.visible = inName || inProject || inTags;
+      m.visible = d.visible;
+    }
+    for (const g of nodeGlows) g.visible = nodeMap[g.userData.nodeId] && nodeMap[g.userData.nodeId].visible;
+    for (const lbl of nodeLabels) lbl.visible = nodeMap[lbl.userData.nodeId] && nodeMap[lbl.userData.nodeId].visible;
+    rebuildEdgeGeometry();
+  }
+
+  function onSearchEnter() {
+    const q = searchInput.value.trim().toLowerCase();
+    if (q) {
+      const targets = nodeMeshes.filter(m => m.userData.visible);
+      if (targets.length) fitCamera(targets);
+    } else {
+      fitCamera();
+    }
+  }
+
+  function onMouseMove(event) {
+    const rect = renderer.domElement.getBoundingClientRect();
+    mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+    mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+    raycaster.setFromCamera(mouse, camera);
+    const visible = nodeMeshes.filter(m => m.visible);
+    const intersects = raycaster.intersectObjects(visible);
+    if (intersects.length > 0) {
+      const node = intersects[0].object;
+      if (hoveredNode !== node) {
+        if (hoveredNode) {
+          hoveredNode.material.opacity = 1.0;
+          const hg = nodeGlows.find(g => g.userData.nodeId === hoveredNode.userData.id);
+          if (hg) hg.material.opacity = hg.userData.baseOpacity;
+        }
+        hoveredNode = node;
+        hoveredNode.material.opacity = 1.5;
+        const hg = nodeGlows.find(g => g.userData.nodeId === node.userData.id);
+        if (hg) hg.material.opacity = 0.5;
+        tooltip.classList.remove('hidden');
+        tooltip.textContent = node.userData.name || node.userData.id;
+      }
+      tooltip.style.left = (event.clientX + 12) + 'px';
+      tooltip.style.top = (event.clientY + 12) + 'px';
+      renderer.domElement.style.cursor = 'pointer';
+    } else {
+      if (hoveredNode) {
+        hoveredNode.material.opacity = 1.0;
+        const hg = nodeGlows.find(g => g.userData.nodeId === hoveredNode.userData.id);
+        if (hg) hg.material.opacity = hg.userData.baseOpacity;
+        hoveredNode = null;
+      }
+      tooltip.classList.add('hidden');
+      renderer.domElement.style.cursor = 'grab';
+    }
+  }
+
+  function onClick(event) {
+    const rect = renderer.domElement.getBoundingClientRect();
+    mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+    mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+    raycaster.setFromCamera(mouse, camera);
+    const visible = nodeMeshes.filter(m => m.visible);
+    const intersects = raycaster.intersectObjects(visible);
+    if (intersects.length > 0) {
+      showPanel(intersects[0].object.userData.id);
+    } else {
+      panel.classList.add('hidden');
+    }
+  }
+
+  document.querySelectorAll('.edge-toggle').forEach(cb => {
+    cb.addEventListener('change', () => toggleEdge(cb.value, cb.checked));
+  });
+  searchInput.addEventListener('input', updateFilter);
+  searchInput.addEventListener('keydown', e => { if (e.key === 'Enter') onSearchEnter(); });
+
+  if (copyVisibleBtn) {
+    copyVisibleBtn.addEventListener('click', () => {
+      const paths = nodeMeshes
+        .filter(m => m.visible && m.userData.type !== 'namespace')
+        .map(m => m.userData.file_path || m.userData.id)
+        .filter(Boolean);
+      if (!paths.length) return;
+      navigator.clipboard.writeText(paths.join('\n')).then(() => {
+        const orig = copyVisibleBtn.textContent;
+        copyVisibleBtn.textContent = `Copied ${paths.length} path${paths.length === 1 ? '' : 's'}!`;
+        setTimeout(() => copyVisibleBtn.textContent = orig, 1500);
+      });
+    });
+  }
+
+  if (syncBtn) {
+    syncBtn.addEventListener('click', async () => {
+      syncBtn.disabled = true;
+      const orig = syncBtn.textContent;
+      syncBtn.textContent = 'Syncing…';
+      try {
+        const res = await fetch('/api/sync', { method: 'POST' });
+        if (!res.ok) throw new Error(await res.text());
+        clearScene();
+        await init();
+        syncBtn.textContent = 'Synced!';
+      } catch (err) {
+        syncBtn.textContent = 'Failed';
+        console.error('Sync failed:', err);
+      } finally {
+        setTimeout(() => { syncBtn.disabled = false; syncBtn.textContent = orig; }, 1500);
+      }
+    });
+  }
+
+  function clearScene() {
+    for (const m of nodeMeshes) { scene.remove(m); m.geometry.dispose(); m.material.dispose(); }
+    for (const g of nodeGlows) { scene.remove(g); g.geometry.dispose(); g.material.dispose(); }
+    for (const lbl of nodeLabels) { scene.remove(lbl); if (lbl.material) lbl.material.dispose(); }
+    for (const el of edgeLines) { scene.remove(el.line); el.geo.dispose(); }
+    nodeMeshes = []; nodeGlows = []; nodeLabels = []; edgeLines = []; nodeMap = {};
+  }
+
+  function createStarField() {
+    const count = 3000;
+    const geo = new THREE.BufferGeometry();
+    const positions = new Float32Array(count * 3);
+    const colors = new Float32Array(count * 3);
+    const sizes = new Float32Array(count);
+    for (let i = 0; i < count; i++) {
+      const r = 200 + Math.random() * 1800;
+      const a = Math.random() * Math.PI * 2;
+      positions[i * 3] = Math.cos(a) * r;
+      positions[i * 3 + 1] = Math.sin(a) * r;
+      positions[i * 3 + 2] = (Math.random() - 0.5) * 50;
+      const intensity = 0.3 + Math.random() * 0.7;
+      const tint = Math.random();
+      if (tint < 0.6) { colors[i*3] = intensity; colors[i*3+1] = intensity; colors[i*3+2] = intensity; }
+      else if (tint < 0.85) { colors[i*3] = intensity * 0.7; colors[i*3+1] = intensity * 0.85; colors[i*3+2] = intensity; }
+      else { colors[i*3] = intensity; colors[i*3+1] = intensity * 0.8; colors[i*3+2] = intensity * 0.5; }
+      sizes[i] = 0.5 + Math.random() * 1.5;
+    }
+    geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    const mat = new THREE.PointsMaterial({ size: 1.2, vertexColors: true, transparent: true, opacity: 0.6, sizeAttenuation: true, blending: THREE.AdditiveBlending });
+    starField = new THREE.Points(geo, mat);
+    scene.add(starField);
+  }
+
+  function createDustField() {
+    const count = 800;
+    const geo = new THREE.BufferGeometry();
+    const positions = new Float32Array(count * 3);
+    const colors = new Float32Array(count * 3);
+    for (let i = 0; i < count; i++) {
+      const r = 30 + Math.random() * 400;
+      const a = Math.random() * Math.PI * 2;
+      positions[i * 3] = Math.cos(a) * r;
+      positions[i * 3 + 1] = Math.sin(a) * r;
+      positions[i * 3 + 2] = (Math.random() - 0.5) * 10;
+      const intensity = 0.05 + Math.random() * 0.1;
+      colors[i*3] = intensity * 0.6;
+      colors[i*3+1] = intensity * 0.7;
+      colors[i*3+2] = intensity;
+    }
+    geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    const mat = new THREE.PointsMaterial({ size: 8, vertexColors: true, transparent: true, opacity: 0.4, sizeAttenuation: true, blending: THREE.AdditiveBlending, depthWrite: false });
+    dustField = new THREE.Points(geo, mat);
+    scene.add(dustField);
+  }
+
+  function initThree() {
+    const container = document.getElementById('cy');
+    scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x000005);
+
+    camera = new THREE.PerspectiveCamera(50, container.clientWidth / container.clientHeight, 0.1, 5000);
+    camera.position.set(0, 0, 400);
+
+    try {
+      renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+    } catch (e) {
+      container.innerHTML = '<div style="color:#aaccff;padding:2rem;font-family:system-ui">WebGL not available. <a href="/" style="color:#7fb069">Go to 2D version</a></div>';
+      return false;
+    }
+    renderer.setSize(container.clientWidth, container.clientHeight);
+    renderer.setPixelRatio(window.devicePixelRatio);
+    container.appendChild(renderer.domElement);
+
+    controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.08;
+    controls.enableRotate = false; // 2D mode: no rotation
+    controls.enablePan = true;
+
+    raycaster = new THREE.Raycaster();
+    mouse = new THREE.Vector2();
+
+    renderer.domElement.addEventListener('mousemove', onMouseMove);
+    renderer.domElement.addEventListener('click', onClick);
+
+    window.addEventListener('resize', () => {
+      camera.aspect = container.clientWidth / container.clientHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(container.clientWidth, container.clientHeight);
+    });
+
+    createStarField();
+    createDustField();
+
+    const info = document.createElement('div');
+    info.id = 'galaxy-info';
+    info.textContent = 'Scroll to zoom · Drag to pan · Click a star to explore';
+    document.body.appendChild(info);
+
+    let frame = 0;
+    function animate() {
+      requestAnimationFrame(animate);
+      controls.update();
+      frame++;
+      // Twinkle stars
+      if (starField && frame % 3 === 0) {
+        starField.material.opacity = 0.5 + Math.sin(frame * 0.02) * 0.1;
+      }
+      // Slow dust drift
+      if (dustField) dustField.rotation.z += 0.0003;
+      // Pulse glows
+      for (let i = 0; i < nodeGlows.length; i++) {
+        const g = nodeGlows[i];
+        if (!g.visible) continue;
+        const pulse = Math.sin(frame * 0.03 + i * 0.5) * 0.05;
+        g.material.opacity = g.userData.baseOpacity + pulse;
+      }
+      // Label distance scaling
+      const camDist = camera.position.distanceTo(controls.target);
+      for (const lbl of nodeLabels) {
+        if (!lbl.visible) continue;
+        const distScale = Math.max(0.5, Math.min(2.5, camDist / 250));
+        lbl.scale.set(lbl.material.map.image.width * 0.12 * distScale, lbl.material.map.image.height * 0.12 * distScale, 1);
+      }
+      renderer.render(scene, camera);
+    }
+    animate();
+  }
+
+  async function init() {
+    try {
+      const res = await fetch('/api/graph');
+      if (!res.ok) throw new Error(res.statusText);
+      const graph = await res.json();
+      buildGalaxy(graph);
+    } catch (err) {
+      console.error(err);
+      document.getElementById('cy').textContent = 'Failed to load graph: ' + err.message;
+    }
+  }
+
+  initThree();
+  if (renderer) init();
+})();

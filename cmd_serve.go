@@ -267,6 +267,9 @@ func handleServe(cfg *Config) {
 	mux.HandleFunc("/v2", func(w http.ResponseWriter, r *http.Request) {
 		serveV2Index(w, r, staticFS)
 	})
+	mux.HandleFunc("/v3", func(w http.ResponseWriter, r *http.Request) {
+		serveFileFromFS(w, r, staticFS, "v3.html", "text/html; charset=utf-8")
+	})
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		serveIndex(w, r, staticFS)
 	})
@@ -404,11 +407,15 @@ func serveIndex(w http.ResponseWriter, r *http.Request, staticFS fs.FS) {
 }
 
 func serveV2Index(w http.ResponseWriter, r *http.Request, staticFS fs.FS) {
-	data, err := fs.ReadFile(staticFS, "v2.html")
+	serveFileFromFS(w, r, staticFS, "v2.html", "text/html; charset=utf-8")
+}
+
+func serveFileFromFS(w http.ResponseWriter, r *http.Request, staticFS fs.FS, name, contentType string) {
+	data, err := fs.ReadFile(staticFS, name)
 	if err != nil {
-		http.Error(w, "v2 index missing", http.StatusInternalServerError)
+		http.Error(w, name+" missing", http.StatusInternalServerError)
 		return
 	}
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Content-Type", contentType)
 	w.Write(data)
 }
