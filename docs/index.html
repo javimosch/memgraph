@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>sick-memory — File-Based Memory for AI Coding Agents</title>
+  <title>memgraph-cli — Skill Graph Visualizer for AI Agents</title>
   <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
@@ -19,70 +19,63 @@
 </head>
 <body class="bg-[#0a0a0b] text-slate-100 font-sans">
   <div class="max-w-4xl mx-auto px-6 py-16">
-    <h1 class="text-5xl font-bold text-white tracking-tight">sick-memory <span class="text-4xl">🤮💾</span></h1>
-    <p class="text-slate-400 mt-3 text-lg">File-based memory system for AI coding agents — centralized storage, git-based scoping, worktree support.</p>
+    <h1 class="text-5xl font-bold text-white tracking-tight">memgraph-cli</h1>
+    <p class="text-slate-400 mt-3 text-lg">Visualize your AI agent skills as a living galaxy. Auto-syncs from <code class="text-slate-300">~/.agents/skills</code> and <code class="text-slate-300">~/handoffs</code>, builds a knowledge graph, and renders it as an interactive Via Lactea star map.</p>
 
     <div class="mt-6 flex flex-wrap gap-3">
-      <a href="https://github.com/javimosch/sick-memory" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-slate-800 text-slate-300 text-sm hover:bg-slate-700 transition-all">⭐ GitHub</a>
-      <a href="https://github.com/javimosch/supercli" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-slate-800 text-slate-300 text-sm hover:bg-slate-700 transition-all">⚡ supercli</a>
+      <a href="https://github.com/javimosch/memgraph-cli" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-slate-800 text-slate-300 text-sm hover:bg-slate-700 transition-all">GitHub</a>
+      <a href="changelog.html" class="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-slate-800 text-slate-300 text-sm hover:bg-slate-700 transition-all">Changelog</a>
     </div>
 
     <div class="mt-10 grid gap-6">
-      <div class="p-6 rounded-xl border border-slate-800 bg-[#121213]">
-        <h2 class="text-xl font-semibold text-white">⚡ Quick Start</h2>
-        <div class="mt-3 mb-4 p-3 rounded-lg bg-blue-500/10 border border-blue-500/20 text-sm text-slate-300">
-          🚀 Also available as a <a href="https://github.com/javimosch/supercli" target="_blank" rel="noopener noreferrer" class="text-blue-400 hover:underline">supercli</a> plugin: <code class="text-sm bg-[#1a1a1c] px-1.5 py-0.5 rounded">sc plugins install sick-memory</code>
-        </div>
-        <pre class="p-4 rounded-lg bg-[#1a1a1c] text-sm text-slate-300 overflow-x-auto"><code>sick-memory init
-sick-memory remember "Authentication uses JWT with 24h expiry" --type project
-sick-memory recall "authentication" --json
-sick-memory list --json</code></pre>
-      </div>
-
-      <div class="p-6 rounded-xl border border-slate-800 bg-[#121213]">
-        <h2 class="text-xl font-semibold text-white">✨ Key Features</h2>
-        <ul class="mt-4 space-y-2 text-slate-300">
-          <li><span class="text-blue-400 mr-2">📦</span> Centralized storage at <code class="text-sm bg-[#1a1a1c] px-1.5 py-0.5 rounded">~/.sick-memory/</code></li>
-          <li><span class="text-blue-400 mr-2">🌿</span> Git-based scoping — memory tied to repository root</li>
-          <li><span class="text-blue-400 mr-2">🔗</span> Worktree support — all worktrees share memory</li>
-          <li><span class="text-blue-400 mr-2">🔍</span> TF-IDF search with word-overlap fallback</li>
-          <li><span class="text-blue-400 mr-2">📋</span> JSON output for agent consumption</li>
-          <li><span class="text-blue-400 mr-2">🤖</span> Agent bridges for Claude Code, OpenCode, Copilot</li>
-          <li><span class="text-blue-400 mr-2">💾</span> Zero infrastructure — files only, no DB</li>
+      <div class="p-6 bg-slate-900 rounded-xl border border-slate-800">
+        <h2 class="text-xl font-semibold text-white">Galaxy Visualization</h2>
+        <p class="text-slate-400 mt-2 text-sm">Project clusters spiral out from a galactic core. Namespace nodes are golden core stars; skills are colored stars sized by degree. 1500 background stars, nebula dust, additive blending — your skills as a Milky Way.</p>
+        <ul class="mt-3 text-sm text-slate-400 space-y-1">
+          <li>• Drag stars to reposition overlapping nodes</li>
+          <li>• Click a star to read its full content</li>
+          <li>• Search + Enter to fit visible nodes</li>
+          <li>• Copy Visible Paths to clipboard</li>
+          <li>• Toggle references / similar / shared-keyword edges</li>
         </ul>
       </div>
 
-      <div class="p-6 rounded-xl border border-slate-800 bg-[#121213]">
-        <h2 class="text-xl font-semibold text-white">📟 Commands</h2>
-        <div class="mt-4 grid sm:grid-cols-2 gap-3 text-sm">
-          <div class="p-3 rounded-lg bg-[#1a1a1c]"><code class="text-blue-400">init</code><p class="text-slate-400 mt-1">🔧 Initialize memory system</p></div>
-          <div class="p-3 rounded-lg bg-[#1a1a1c]"><code class="text-blue-400">remember</code><p class="text-slate-400 mt-1">💾 Store a new memory</p></div>
-          <div class="p-3 rounded-lg bg-[#1a1a1c]"><code class="text-blue-400">recall</code><p class="text-slate-400 mt-1">🔍 Search memories</p></div>
-          <div class="p-3 rounded-lg bg-[#1a1a1c]"><code class="text-blue-400">list</code><p class="text-slate-400 mt-1">📋 List all memories</p></div>
-          <div class="p-3 rounded-lg bg-[#1a1a1c]"><code class="text-blue-400">edit</code><p class="text-slate-400 mt-1">✏️ Update a memory</p></div>
-          <div class="p-3 rounded-lg bg-[#1a1a1c]"><code class="text-blue-400">delete</code><p class="text-slate-400 mt-1">🗑️ Remove a memory</p></div>
-        </div>
+      <div class="p-6 bg-slate-900 rounded-xl border border-slate-800">
+        <h2 class="text-xl font-semibold text-white">Auto-Sync</h2>
+        <p class="text-slate-400 mt-2 text-sm">Run <code class="text-slate-300">memgraph serve --auto-sync</code> and it watches <code class="text-slate-300">~/.agents/skills</code> and <code class="text-slate-300">~/handoffs</code> for changes, rebuilding the graph every 4 seconds. No restart needed.</p>
+        <pre class="mt-3 bg-slate-950 rounded-lg p-4 text-sm text-slate-300 overflow-x-auto"><code>./memgraph serve --auto-sync --port 8080
+
+# Custom directories (comma-separated):
+./memgraph serve --auto-sync --sync-dir ~/.agents/skills,~/handoffs,~/projects
+
+# Manual sync via API:
+curl -X POST http://localhost:8080/api/sync</code></pre>
       </div>
 
-      <div class="p-6 rounded-xl border border-slate-800 bg-[#121213]">
-        <h2 class="text-xl font-semibold text-white">🏷️ Memory Types</h2>
-        <div class="mt-4 space-y-3 text-sm">
-          <div class="flex gap-3"><span class="text-cyan-400 font-medium w-24">👤 user</span><span class="text-slate-400">Information about the person (role, goals, expertise)</span></div>
-          <div class="flex gap-3"><span class="text-amber-400 font-medium w-24">💬 feedback</span><span class="text-slate-400">Corrections and confirmations about work approach</span></div>
-          <div class="flex gap-3"><span class="text-emerald-400 font-medium w-24">📌 project</span><span class="text-slate-400">Ongoing work context (who, what, why, when)</span></div>
-          <div class="flex gap-3"><span class="text-purple-400 font-medium w-24">🔗 reference</span><span class="text-slate-400">External system pointers (URLs, dashboard links)</span></div>
-        </div>
+      <div class="p-6 bg-slate-900 rounded-xl border border-slate-800">
+        <h2 class="text-xl font-semibold text-white">Graph Construction</h2>
+        <p class="text-slate-400 mt-2 text-sm">Ingests both <code class="text-slate-300">SKILL.md</code> files and plain <code class="text-slate-300">.md</code> files. Builds edges from three relation types:</p>
+        <ul class="mt-3 text-sm text-slate-400 space-y-1">
+          <li>• <span class="text-blue-400">references</span> — skill mentions another skill by name</li>
+          <li>• <span class="text-green-400">similar</span> — TF-IDF pseudo-semantic similarity</li>
+          <li>• <span class="text-amber-400">shared-keyword</span> — overlapping tags/keywords</li>
+        </ul>
+      </div>
+
+      <div class="p-6 bg-slate-900 rounded-xl border border-slate-800">
+        <h2 class="text-xl font-semibold text-white">Quick Start</h2>
+        <pre class="mt-3 bg-slate-950 rounded-lg p-4 text-sm text-slate-300 overflow-x-auto"><code># Build
+go build -o memgraph .
+
+# Ingest skills and launch galaxy
+./memgraph serve --auto-sync --port 8080
+
+# Open http://localhost:8080</code></pre>
       </div>
     </div>
 
-    <nav class="mt-12 flex gap-4">
-      <a href="changelog.html" class="px-5 py-2.5 rounded-lg border border-slate-700 text-slate-300 font-medium text-sm hover:border-blue-500 hover:text-blue-400 transition-all">📋 Changelog</a>
-      <a href="https://github.com/javimosch/sick-memory" target="_blank" rel="noopener noreferrer" class="px-5 py-2.5 rounded-lg border border-slate-700 text-slate-300 font-medium text-sm hover:border-blue-500 hover:text-blue-400 transition-all">⭐ GitHub →</a>
-      <a href="https://github.com/javimosch/supercli" target="_blank" rel="noopener noreferrer" class="px-5 py-2.5 rounded-lg border border-slate-700 text-slate-300 font-medium text-sm hover:border-blue-500 hover:text-blue-400 transition-all">⚡ supercli →</a>
-    </nav>
-
     <footer class="mt-16 pt-8 border-t border-slate-800 text-slate-500 text-sm">
-      MIT — <a href="https://www.linkedin.com/in/arancibiajav/" target="_blank" rel="noopener noreferrer" class="text-slate-400 hover:text-blue-400 transition-colors">Javier Leandro Arancibia</a>
+      <p>Formerly <code>sick-memory</code>. Storage at <code>~/.memgraph</code> with backward-compatible fallback to <code>~/.sick-memory</code>.</p>
     </footer>
   </div>
 </body>

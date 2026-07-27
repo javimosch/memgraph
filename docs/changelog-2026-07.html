@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Changelog - memgraph-cli</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+  <style>
+    body { font-family: 'Inter', system-ui, sans-serif; background-color: #0a0a0b; color: #e2e8f0; }
+    h1, h2 { font-family: 'Geist', system-ui, sans-serif; }
+    .feature-card { background: #111827; border: 1px solid #1f2937; border-radius: 0.75rem; padding: 1.25rem; }
+    .tag { display: inline-block; font-size: 0.7rem; padding: 0.1rem 0.5rem; border-radius: 0.25rem; font-weight: 600; }
+    .tag-feat { background: #064e3b; color: #6ee7b7; }
+    .tag-fix { background: #7c2d12; color: #fdba74; }
+    .tag-perf { background: #1e3a8a; color: #93c5fd; }
+    .tag-refactor { background: #3b0764; color: #c4b5fd; }
+  </style>
+</head>
+<body class="bg-[#0a0a0b] min-h-screen">
+  <div class="max-w-5xl mx-auto px-6 py-16">
+    <header class="mb-16">
+      <a href="changelog.html" class="text-blue-400 hover:text-blue-300 text-sm mb-6 inline-block transition-colors">&larr; All changelogs</a>
+      <h1 class="text-5xl font-bold text-white mt-4 tracking-tight">July 2026</h1>
+      <p class="text-slate-400 mt-3 text-lg">Rebrand, galaxy visualization, and multi-source sync</p>
+    </header>
+
+    <div class="space-y-4">
+      <div class="feature-card">
+        <span class="tag tag-refactor">refactor</span>
+        <h3 class="text-white text-lg font-semibold mt-2">Galaxy view is now the sole UI</h3>
+        <p class="text-slate-400 text-sm mt-1">Removed the 2D Cytoscape.js and 3D Three.js views. The Via Lactea galaxy visualization is now served at the root path. Unknown paths return 404. 834 lines of dead code deleted.</p>
+      </div>
+
+      <div class="feature-card">
+        <span class="tag tag-feat">feat</span>
+        <h3 class="text-white text-lg font-semibold mt-2">Drag nodes to reposition</h3>
+        <p class="text-slate-400 text-sm mt-1">Left-click+drag on any star to move it on the z=0 plane. Glow, label, and connected edges follow in real-time. Click without drag (4px threshold) still opens the detail panel. Pan is disabled during node drag.</p>
+      </div>
+
+      <div class="feature-card">
+        <span class="tag tag-perf">perf</span>
+        <h3 class="text-white text-lg font-semibold mt-2">Panning fix and batched glows</h3>
+        <p class="text-slate-400 text-sm mt-1">Left-click drag now pans (was right-click only). Replaced 293 individual glow sphere meshes with a single Points cloud (1 draw call). Removed per-frame glow pulse loop. Label scale updates cached. Stars 3000→1500, dust 800→400.</p>
+      </div>
+
+      <div class="feature-card">
+        <span class="tag tag-feat">feat</span>
+        <h3 class="text-white text-lg font-semibold mt-2">Via Lactea galaxy visualization</h3>
+        <p class="text-slate-400 text-sm mt-1">2D top-down galaxy view with spiral arm layout. 1500 background stars with twinkle, 400 dust particles with additive blending, node glow halos, namespace nodes as golden core stars. Additive blending throughout for Milky Way luminosity.</p>
+      </div>
+
+      <div class="feature-card">
+        <span class="tag tag-feat">feat</span>
+        <h3 class="text-white text-lg font-semibold mt-2">3D node labels as canvas-texture sprites</h3>
+        <p class="text-slate-400 text-sm mt-1">Each node gets a floating label above it. Namespace labels larger (48px) and bright, skill labels smaller (32px) and muted. Labels scale with camera distance. Cached canvas textures for performance.</p>
+      </div>
+
+      <div class="feature-card">
+        <span class="tag tag-feat">feat</span>
+        <h3 class="text-white text-lg font-semibold mt-2">Three.js 3D graph visualization</h3>
+        <p class="text-slate-400 text-sm mt-1">3D phyllotaxis layout with spherical node distribution. OrbitControls for rotate/zoom/pan. Raycasting for node hover and click. Same search/filter/copy-paths/sync functionality.</p>
+      </div>
+
+      <div class="feature-card">
+        <span class="tag tag-feat">feat</span>
+        <h3 class="text-white text-lg font-semibold mt-2">Multiple sync directories + plain .md ingestion</h3>
+        <p class="text-slate-400 text-sm mt-1"><code>--auto-sync</code> now defaults to both <code>~/.agents/skills</code> and <code>~/handoffs</code>. <code>--sync-dir</code> accepts comma-separated paths. Scanner picks up both SKILL.md and plain .md files. Deduplicates by ID across sources.</p>
+      </div>
+
+      <div class="feature-card">
+        <span class="tag tag-feat">feat</span>
+        <h3 class="text-white text-lg font-semibold mt-2">Rebrand to memgraph-cli</h3>
+        <p class="text-slate-400 text-sm mt-1">Renamed from sick-memory to memgraph-cli. Binary is now <code>memgraph</code>. Storage at <code>~/.memgraph</code> with fallback to <code>~/.sick-memory</code>. New repo at <a href="https://github.com/javimosch/memgraph-cli" class="text-blue-400">github.com/javimosch/memgraph-cli</a>.</p>
+      </div>
+
+      <div class="feature-card">
+        <span class="tag tag-fix">fix</span>
+        <h3 class="text-white text-lg font-semibold mt-2">closeBtn declaration restored</h3>
+        <p class="text-slate-400 text-sm mt-1">Fixed ReferenceError that prevented the entire graph.js IIFE from executing, causing a blank graph.</p>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
