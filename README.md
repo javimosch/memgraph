@@ -1,24 +1,17 @@
-# sick-memory 🤮💾
+# memgraph-cli 🧠📊
 
-File-based memory system for AI coding agents with centralized storage, git-based scoping, and worktree support. Inspired by Claude Code's memory system, sick-memory provides persistent knowledge storage across sessions using markdown files with YAML frontmatter.
+**Memgraph CLI** — Knowledge graph and memory system for AI coding agents.
 
-## Name Disclaimer
-
-The name "sick-memory" combines "sick" with "memory" - the vomiting emoji 🤮 represents the idea of "vomiting memories" for persistent storage. Additionally, "sick" sounds phonetically similar to "zig" - the original implementation language before migrating to Go.
-
-**Implementation Note**: This project was initially implemented in Zig but migrated to Go because Zig 0.16.0 had API compatibility issues with `std.process.argsAlloc` and `std.os.argv` not being available. Go was chosen following SuperCLI recommendations as it's the standard for plugins with better ecosystem support and API stability.
+Features a phyllotaxis-spiral visual knowledge graph explorer, automatic skills folder synchronization, TF-IDF + semantic graph linking, and agent-agnostic memory persistence.
 
 ## Features
 
-- **Centralized Storage**: All memories stored in `~/.sick-memory/` with git-based project scoping
-- **Git-based Scoping**: Memory automatically scoped to git repository root
-- **Worktree Support**: All git worktrees of the same repository share memory directory
-- **Global Configuration**: Centralized config file for user preferences
-- **File-based Storage**: Markdown files with YAML frontmatter for human readability
-- **Agent-agnostic**: Works with Claude Code, OpenCode, Copilot, and other AI agents
-- **JSON Output**: Machine-readable output for agent integration
-- **Bridge Commands**: Generate agent-specific configurations automatically
-- **Zero Infrastructure**: No database or server required, works offline
+- **Spiral Graph Explorer**: Interactive web UI (`memgraph serve`) with phyllotaxis spiral layout, search, filters, and node inspector.
+- **Copy Visible Paths**: Filter skills/memories (e.g. search "rbm20"), hit `ENTER`, then copy all visible file paths to share directly with your agent.
+- **Auto-Sync (`--auto-sync`)**: Automatically monitors `~/.agents/skills` (or any custom directory) and updates the knowledge graph in real-time.
+- **Graph-From-Dir**: Ingest any directory of `SKILL.md` files into a relational knowledge graph (`references`, `similar`, `shared-keyword`).
+- **Centralized Storage**: All memories stored in `~/.memgraph/` with git-based project scoping.
+- **Agent Integration**: Works seamlessly with Claude Code, OpenCode, Copilot, and SuperCLI.
 
 ## Installation
 
@@ -26,192 +19,56 @@ The name "sick-memory" combines "sick" with "memory" - the vomiting emoji 🤮 r
 
 ```bash
 # Clone the repository
-git clone https://github.com/javimosch/sick-memory.git
-cd sick-memory
+git clone https://github.com/javimosch/memgraph-cli.git
+cd memgraph-cli
 
 # Build the binary
-go build -o sick-memory .
+go build -o memgraph .
 
-# Install to local bin
-cp sick-memory ~/.local/bin/
+# Install to path
+cp memgraph ~/.local/bin/
 ```
 
-### SuperCLI Plugin
+## Quickstart
+
+### 1. Ingest Skills & Explore Knowledge Graph
 
 ```bash
-# Install the SuperCLI plugin
-cd ~/ai/supercli
-sc plugins install ./plugins/sick-memory --on-conflict replace --json
+# Ingest all your global agent skills into a graph
+memgraph graph-from-dir ~/.agents/skills
 
-# Sync skills to make the skill available
-sc skills sync
+# Start the web UI server with auto-sync enabled
+memgraph serve --auto-sync --port 8080
 ```
 
-## Usage
+Open `http://localhost:8080` to explore your agent skills constellation!
 
-### Basic Commands
+### 2. Standard Memory Usage
 
 ```bash
 # Initialize memory system for current project
-sick-memory init
+memgraph init
 
-# Add a memory
-sick-memory remember "Use real database instances in tests, not mocks"
+# Save a memory
+memgraph remember "Use real database instances in tests, not mocks" --type feedback
 
-# Retrieve memories
-sick-memory recall "database"
+# Recall memories
+memgraph recall "database" --json
 
-# List all memories
-sick-memory list
-
-# Show system status
-sick-memory status
-
-# Show configuration and storage location
-sick-memory config
+# List memories
+memgraph list
 ```
 
-### Memory Types
+### 3. Agent Bridges
 
-The system supports four memory types (following Claude Code's taxonomy):
-
-- **user**: Information about the person (role, goals, expertise)
-- **feedback**: Corrections and confirmations about work approach
-- **project**: Ongoing work context (who, what, why, when)
-- **reference**: External system pointers (URLs, dashboard links)
+Generate bridge configs for your AI agents:
 
 ```bash
-# Add memory with specific type
-sick-memory remember "API uses JWT tokens with 24h expiration" --type project
+memgraph bridge claude-code
+memgraph bridge opencode
+memgraph bridge copilot
 ```
-
-### JSON Output
-
-Add `--json` flag to any command for structured output:
-
-```bash
-sick-memory recall "query" --json
-sick-memory status --json
-sick-memory list --json
-sick-memory config --json
-```
-
-## Storage Architecture
-
-### Centralized Storage
-
-- **Location**: `~/.sick-memory/projects/<sanitized-git-root>/memory/`
-- **Git-based Scoping**: Memory automatically scoped to git repository root
-- **Worktree Support**: All git worktrees share the same memory directory
-- **Fallback**: Uses local `.sick-memory/` directory if not in a git repository
-
-### Global Configuration
-
-Global configuration is stored in `~/.sick-memory/config.json`:
-
-- **default_memory_type**: Default memory type (user, feedback, project, reference)
-- **max_memory_size**: Maximum memory file size in bytes
-- **auto_index**: Whether to automatically update memory index
-
-## Agent Integration
-
-### Claude Code
-
-```bash
-sick-memory bridge claude-code
-```
-
-Creates `.claude/CLAUDE.md` with memory loading instructions and centralized storage information.
-
-### OpenCode
-
-```bash
-sick-memory bridge opencode
-```
-
-Creates `.opencode/memory.json` with OpenCode configuration.
-
-### Copilot
-
-```bash
-sick-memory bridge copilot
-```
-
-Creates `.copilot/settings.json` with Copilot configuration.
-
-## SuperCLI Plugin
-
-When installed as a SuperCLI plugin, sick-memory provides enhanced commands:
-
-```bash
-# SuperCLI plugin commands
-sc sick-memory init
-sc sick-memory remember "<content>"
-sc sick-memory recall [query]
-sc sick-memory list
-sc sick-memory status
-sc sick-memory config show
-sc sick-memory bridge generate <agent>
-
-# Quick access via /sm shorthand
-/sm init
-/sm remember "<content>"
-/sm recall [query]
-```
-
-### Learning the Skill
-
-```bash
-# Get comprehensive sick-memory documentation
-sc skills get sick-memory:quickstart
-
-# Search for the skill
-sc skills search --query sick-memory
-```
-
-## Development
-
-### Building
-
-```bash
-# Build default binary
-go build -o sick-memory .
-
-# Build optimized binary (smaller size)
-go build -ldflags "-s -w" -o sick-memory .
-
-# Using the build script
-./build.sh
-```
-
-### Testing
-
-```bash
-# Run tests
-go test ./...
-
-# Test with coverage
-go test -cover ./...
-```
-
-## Architecture
-
-Sick-memory follows a clean room implementation inspired by Claude Code's memory system:
-
-- **Storage**: Markdown files with YAML frontmatter
-- **Scoping**: Git-based project isolation
-- **Configuration**: JSON-based global config
-- **Output**: Human-readable text with optional JSON
-- **Exit Codes**: Semantic exit codes for programmatic use
 
 ## License
 
-MIT License - see LICENSE file for details
-
-## Author
-
-Javier Leandro Arancibia
-
-## Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
+MIT

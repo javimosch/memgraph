@@ -1,8 +1,8 @@
 #!/bin/bash
-# Build sick-memory CLI - Default
-go build -o sick-memory-default .
-ls -lh sick-memory-default
+# Build memgraph CLI - Default
+go build -o memgraph .
+ls -lh memgraph
 
-# Build sick-memory CLI - Optimized (size + performance)
-go build -ldflags "-s -w" -o sick-memory-optimized .
-ls -lh sick-memory-optimized
+# Build memgraph CLI - Optimized (size + performance)
+go build -ldflags "-s -w" -o memgraph-release .
+ls -lh memgraph-release

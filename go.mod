@@ -1,3 +1,3 @@
-module github.com/javimosch/sick-memory
+module github.com/javimosch/memgraph-cli
 
 go 1.22
