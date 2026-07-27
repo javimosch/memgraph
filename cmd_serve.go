@@ -264,6 +264,9 @@ func handleServe(cfg *Config) {
 		})
 	})
 	mux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.FS(staticFS))))
+	mux.HandleFunc("/v2", func(w http.ResponseWriter, r *http.Request) {
+		serveV2Index(w, r, staticFS)
+	})
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		serveIndex(w, r, staticFS)
 	})
@@ -394,6 +397,16 @@ func serveIndex(w http.ResponseWriter, r *http.Request, staticFS fs.FS) {
 	data, err := fs.ReadFile(staticFS, "index.html")
 	if err != nil {
 		http.Error(w, "index missing", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Write(data)
+}
+
+func serveV2Index(w http.ResponseWriter, r *http.Request, staticFS fs.FS) {
+	data, err := fs.ReadFile(staticFS, "v2.html")
+	if err != nil {
+		http.Error(w, "v2 index missing", http.StatusInternalServerError)
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
