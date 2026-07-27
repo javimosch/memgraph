@@ -40,13 +40,13 @@ type nodeInfo struct {
 }
 
 type serverState struct {
-	mu       sync.RWMutex
-	graph    *GraphIndex
-	nodeMap  map[string]Memory
-	index    *SearchIndex
-	cfg      *Config
-	syncDir  string
-	lastSync time.Time
+	mu        sync.RWMutex
+	graph     *GraphIndex
+	nodeMap   map[string]Memory
+	index     *SearchIndex
+	cfg       *Config
+	syncDirs  []string
+	lastSync  time.Time
 }
 
 func expandHomeDir(path string) string {
@@ -62,16 +62,37 @@ func expandHomeDir(path string) string {
 	return path
 }
 
+func parseSyncDirs(raw string) []string {
+	var dirs []string
+	for _, d := range strings.Split(raw, ",") {
+		d = strings.TrimSpace(d)
+		if d != "" {
+			dirs = append(dirs, d)
+		}
+	}
+	return dirs
+}
+
 func (s *serverState) syncNow() error {
-	if s.syncDir == "" {
+	if len(s.syncDirs) == 0 {
 		return nil
 	}
-	resolvedDir := expandHomeDir(s.syncDir)
-	if _, err := os.Stat(resolvedDir); os.IsNotExist(err) {
-		return fmt.Errorf("sync dir not found: %s", resolvedDir)
+
+	resolvedDirs := make([]string, 0, len(s.syncDirs))
+	for _, dir := range s.syncDirs {
+		resolvedDir := expandHomeDir(dir)
+		if _, err := os.Stat(resolvedDir); os.IsNotExist(err) {
+			log.Printf("Sync dir not found, skipping: %s", resolvedDir)
+			continue
+		}
+		resolvedDirs = append(resolvedDirs, resolvedDir)
 	}
 
-	graph, skillCount, namespaceCount, err := ingestSkillsDir(resolvedDir, s.cfg.MemoryDir, "", s.cfg)
+	if len(resolvedDirs) == 0 {
+		return fmt.Errorf("no sync directories found")
+	}
+
+	graph, skillCount, namespaceCount, err := ingestMultiDir(resolvedDirs, s.cfg.MemoryDir, s.cfg)
 	if err != nil {
 		return err
 	}
@@ -97,28 +118,30 @@ func (s *serverState) syncNow() error {
 	s.lastSync = time.Now().UTC()
 	s.mu.Unlock()
 
-	log.Printf("Synced %d skills (%d namespaces, %d total nodes) from %s", skillCount, namespaceCount, len(newGraph.Nodes), resolvedDir)
+	log.Printf("Sync complete: %d skills, %d namespaces, %d total nodes", skillCount, namespaceCount, len(newGraph.Nodes))
 	return nil
 }
 
 func (s *serverState) checkAndSync() {
-	if s.syncDir == "" {
+	if len(s.syncDirs) == 0 {
 		return
 	}
-	resolvedDir := expandHomeDir(s.syncDir)
-	var latestMod time.Time
 
-	_ = filepath.WalkDir(resolvedDir, func(path string, d fs.DirEntry, err error) error {
-		if err != nil || d.IsDir() {
-			return nil
-		}
-		if info, err := d.Info(); err == nil {
-			if info.ModTime().After(latestMod) {
-				latestMod = info.ModTime()
+	var latestMod time.Time
+	for _, dir := range s.syncDirs {
+		resolvedDir := expandHomeDir(dir)
+		_ = filepath.WalkDir(resolvedDir, func(path string, d fs.DirEntry, err error) error {
+			if err != nil || d.IsDir() {
+				return nil
 			}
-		}
-		return nil
-	})
+			if info, err := d.Info(); err == nil {
+				if info.ModTime().After(latestMod) {
+					latestMod = info.ModTime()
+				}
+			}
+			return nil
+		})
+	}
 
 	s.mu.RLock()
 	last := s.lastSync
@@ -150,28 +173,31 @@ func handleServe(cfg *Config) {
 		nodeMap = make(map[string]Memory)
 	}
 
-	syncDir := opts.SyncDir
-	if syncDir == "" && opts.AutoSync {
-		syncDir = "~/.agents/skills"
+	syncDirs := []string{}
+	if opts.SyncDir != "" {
+		syncDirs = parseSyncDirs(opts.SyncDir)
 	}
-	if syncDir == "" && cfg.GlobalConfig.AutoSyncDir != "" {
-		syncDir = cfg.GlobalConfig.AutoSyncDir
+	if len(syncDirs) == 0 && opts.AutoSync {
+		syncDirs = []string{"~/.agents/skills", "~/handoffs"}
 	}
-	if syncDir == "" && cfg.GlobalConfig.AutoSync {
-		syncDir = "~/.agents/skills"
+	if len(syncDirs) == 0 && cfg.GlobalConfig.AutoSyncDir != "" {
+		syncDirs = parseSyncDirs(cfg.GlobalConfig.AutoSyncDir)
+	}
+	if len(syncDirs) == 0 && cfg.GlobalConfig.AutoSync {
+		syncDirs = []string{"~/.agents/skills", "~/handoffs"}
 	}
 
 	state := &serverState{
-		graph:    graph,
-		nodeMap:  nodeMap,
-		index:    index,
-		cfg:      cfg,
-		syncDir:  syncDir,
-		lastSync: time.Now().UTC().Add(-24 * time.Hour),
+		graph:     graph,
+		nodeMap:   nodeMap,
+		index:     index,
+		cfg:       cfg,
+		syncDirs:  syncDirs,
+		lastSync:  time.Now().UTC().Add(-24 * time.Hour),
 	}
 
-	if syncDir != "" {
-		log.Printf("Auto-sync enabled for skills folder: %s", syncDir)
+	if len(syncDirs) > 0 {
+		log.Printf("Auto-sync enabled for: %s", strings.Join(syncDirs, ", "))
 		if err := state.syncNow(); err != nil {
 			log.Printf("Initial sync warning: %v", err)
 		}

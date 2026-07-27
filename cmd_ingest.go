@@ -132,6 +132,7 @@ func makeSkillID(dirName string) string {
 
 func scanSkillFiles(dir string) ([]skillInput, error) {
 	var skills []skillInput
+	seenIDs := make(map[string]bool)
 
 	err := filepath.WalkDir(dir, func(path string, info fs.DirEntry, err error) error {
 		if err != nil {
@@ -140,19 +141,69 @@ func scanSkillFiles(dir string) ([]skillInput, error) {
 		if info.Type()&os.ModeSymlink != 0 {
 			return nil
 		}
-		if info.IsDir() || info.Name() != "SKILL.md" {
+		if info.IsDir() {
 			return nil
 		}
 
-		skill, err := parseSkillFile(path)
+		name := info.Name()
+		var skill skillInput
+		if name == "SKILL.md" {
+			skill, err = parseSkillFile(path)
+		} else if strings.HasSuffix(name, ".md") {
+			skill, err = parseMarkdownFile(path)
+		} else {
+			return nil
+		}
 		if err != nil {
 			return nil
 		}
+		if seenIDs[skill.ID] {
+			return nil
+		}
+		seenIDs[skill.ID] = true
 		skills = append(skills, skill)
 		return nil
 	})
 
 	return skills, err
+}
+
+func parseMarkdownFile(path string) (skillInput, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return skillInput{}, err
+	}
+
+	info, err := os.Stat(path)
+	modTime := time.Now().UTC()
+	if err == nil {
+		modTime = info.ModTime().UTC()
+	}
+
+	name, description, body := parseMinimalFrontmatter(string(data))
+	fileName := strings.TrimSuffix(filepath.Base(path), ".md")
+	dirName := fileName
+
+	id := makeSkillID(dirName)
+	if name == "" {
+		name = fileName
+	}
+	if description == "" {
+		description = firstNonEmptyLine(body)
+	}
+	if description == "" {
+		description = "No description"
+	}
+
+	return skillInput{
+		ID:          id,
+		DirName:     dirName,
+		Name:        name,
+		Description: description,
+		Content:     body,
+		Created:     modTime,
+		FilePath:    path,
+	}, nil
 }
 
 func parseSkillFile(path string) (skillInput, error) {
@@ -205,7 +256,7 @@ func ingestSkillsDir(sourceDir, targetDir, fallbackProject string, cfg *Config) 
 		return nil, 0, 0, fmt.Errorf("failed to scan directory: %w", err)
 	}
 	if len(skills) == 0 {
-		return nil, 0, 0, fmt.Errorf("no SKILL.md files found in %s", sourceDir)
+		return nil, 0, 0, fmt.Errorf("no markdown files found in %s", sourceDir)
 	}
 
 	for i := range skills {
@@ -213,6 +264,51 @@ func ingestSkillsDir(sourceDir, targetDir, fallbackProject string, cfg *Config) 
 		skills[i].Tags = makeSkillTags(skills[i].DirName, skills[i].Project)
 	}
 
+	return writeSkillGraph(skills, targetDir, cfg)
+}
+
+func ingestMultiDir(sourceDirs []string, targetDir string, cfg *Config) (*skillGraph, int, int, error) {
+	if err := ensureMemoryDir(targetDir); err != nil {
+		return nil, 0, 0, fmt.Errorf("failed to initialize memory directory: %w", err)
+	}
+
+	// Clear old memory files from previous syncs
+	entries, _ := os.ReadDir(targetDir)
+	for _, e := range entries {
+		if !e.IsDir() && strings.HasPrefix(e.Name(), "memory_") && strings.HasSuffix(e.Name(), ".md") {
+			_ = os.Remove(filepath.Join(targetDir, e.Name()))
+		}
+	}
+
+	var allSkills []skillInput
+	seenIDs := make(map[string]bool)
+	for _, dir := range sourceDirs {
+		skills, err := scanSkillFiles(dir)
+		if err != nil {
+			continue
+		}
+		for _, s := range skills {
+			if seenIDs[s.ID] {
+				continue
+			}
+			seenIDs[s.ID] = true
+			allSkills = append(allSkills, s)
+		}
+	}
+
+	if len(allSkills) == 0 {
+		return nil, 0, 0, fmt.Errorf("no markdown files found in any source directory")
+	}
+
+	for i := range allSkills {
+		allSkills[i].Project = deriveNamespace(allSkills[i].DirName, "")
+		allSkills[i].Tags = makeSkillTags(allSkills[i].DirName, allSkills[i].Project)
+	}
+
+	return writeSkillGraph(allSkills, targetDir, cfg)
+}
+
+func writeSkillGraph(skills []skillInput, targetDir string, cfg *Config) (*skillGraph, int, int, error) {
 	graph := buildSkillGraph(skills)
 
 	namespaceCount := 0
