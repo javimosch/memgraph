@@ -47,19 +47,17 @@ func handleList(cfg *Config) {
 		memories = memories[:opts.Limit]
 	}
 
-	memoryIDs := make([]string, len(memories))
-	for i, memory := range memories {
-		memoryIDs[i] = "memory_" + memory.ID + ".md"
-	}
-
 	if jsonOutput {
-		successResponse(memoryIDs)
+		json.NewEncoder(os.Stdout).Encode(map[string]interface{}{
+			"count":   len(memories),
+			"results": memories,
+		})
 	} else {
 		fmt.Printf("Memories in %s:\n", cfg.MemoryDir)
-		for _, id := range memoryIDs {
-			fmt.Printf("  %s\n", id)
+		for _, memory := range memories {
+			fmt.Printf("  %s — %s\n", memory.ID, memory.Name)
 		}
-		fmt.Printf("\nTotal memories: %d\n", len(memoryIDs))
+		fmt.Printf("\nTotal memories: %d\n", len(memories))
 	}
 }
 

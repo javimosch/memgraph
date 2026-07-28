@@ -51,10 +51,10 @@ type RecommendResult struct {
 }
 
 func loadGraphForQuery(cfg *Config) (*GraphIndex, map[string]Memory, error) {
-	// Try the configured memory dir first
-	candidates := []string{cfg.MemoryDir}
+	// Prefer the global ~/.memgraph/skills-graph path (the canonical skill graph)
+	// over project-specific memory dirs, which may have stale graphs.
+	var candidates []string
 
-	// Add the global ~/.memgraph/skills-graph path
 	if home, err := os.UserHomeDir(); err == nil {
 		candidates = append(candidates,
 			filepath.Join(home, ".memgraph", "skills-graph"),
@@ -64,12 +64,15 @@ func loadGraphForQuery(cfg *Config) (*GraphIndex, map[string]Memory, error) {
 		globalDir := filepath.Join(home, ".memgraph")
 		if entries, err := os.ReadDir(globalDir); err == nil {
 			for _, e := range entries {
-				if e.IsDir() {
+				if e.IsDir() && e.Name() != "skills-graph" {
 					candidates = append(candidates, filepath.Join(globalDir, e.Name()))
 				}
 			}
 		}
 	}
+
+	// Add the configured memory dir as a fallback
+	candidates = append(candidates, cfg.MemoryDir)
 
 	for _, path := range candidates {
 		graphFile := filepath.Join(path, "graph.json")
@@ -238,6 +241,18 @@ func scoreNode(node Memory, query string, idf map[string]float64) float64 {
 		// Project contains query
 		if strings.Contains(project, q) {
 			score += 20
+		}
+	}
+	// Project name boost: if the query contains the skill's project name as a
+	// whole word, this skill is likely about that project. E.g., "add JWT to tau"
+	// should boost tau-maintenance even if "JWT" matches simpliciti-apiv3-jwt.
+	// Only apply for specific project names (>= 4 chars or contains non-alpha),
+	// to avoid generic projects like "agent", "jar", "am" getting boosted.
+	if project != "" && len(project) >= 3 && !queryStopWords[project] {
+		if isSpecificProjectName(project) {
+			if containsWord(q, project) {
+				score += 40
+			}
 		}
 	}
 	// Word-level matches (skip stop words, use word-boundary matching, IDF-weighted)
@@ -445,6 +460,39 @@ func isAllDigits(s string) bool {
 		}
 	}
 	return true
+}
+
+// isSpecificProjectName returns true for project names that are specific enough
+// to boost. Generic single-word projects like "agent", "jar", "am", "general"
+// return false. Specific projects like "tau", "pve2", "supercli", "coolify"
+// return true.
+func isSpecificProjectName(project string) bool {
+	// Generic project names that should never get a boost
+	generic := map[string]bool{
+		"agent": true, "general": true, "jar": true, "am": true,
+		"add": true, "chat": true, "find": true, "audit": true,
+		"cool": true, "extract": true, "global": true, "token": true,
+		"project": true, "mr": true, "pi": true, "rbm": true,
+		"deployment": true, "smoke": true, "context": true,
+	}
+	if generic[project] {
+		return false
+	}
+	// Projects with numbers are specific (pve2, rbm21, dk2)
+	for i := 0; i < len(project); i++ {
+		if project[i] >= '0' && project[i] <= '9' {
+			return true
+		}
+	}
+	// Projects >= 4 chars are specific enough
+	if len(project) >= 4 {
+		return true
+	}
+	// 3-char projects: only boost if they're known specific names
+	specific3 := map[string]bool{
+		"tau": true, "mem": true, "mco": true, "a2a": true,
+	}
+	return specific3[project]
 }
 
 // stripAccents removes diacritical marks from common Latin characters.

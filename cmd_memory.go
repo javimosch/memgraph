@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -71,7 +72,7 @@ func writeMemoryFromInput(cfg *Config, content, memoryType, project, session str
 	updateSearchIndex(cfg)
 
 	if jsonOutput {
-		successResponse(map[string]interface{}{
+		json.NewEncoder(os.Stdout).Encode(map[string]interface{}{
 			"id":      memoryID,
 			"status":  "remembered",
 			"type":    memoryType,
@@ -117,7 +118,10 @@ func handleRecall(cfg *Config) {
 	if query == "" {
 		results := listAllMemories(index, searchOpts.Project, searchOpts.Session, searchOpts.Tags, opts.Limit)
 		if jsonOutput {
-			successResponse(results)
+			json.NewEncoder(os.Stdout).Encode(map[string]interface{}{
+				"count":   len(results),
+				"results": results,
+			})
 		} else {
 			fmt.Printf("All memories in %s:\n\n", cfg.MemoryDir)
 			for _, result := range results {
@@ -135,7 +139,11 @@ func handleRecall(cfg *Config) {
 
 	if len(results) == 0 {
 		if jsonOutput {
-			successResponse([]SearchResult{})
+			json.NewEncoder(os.Stdout).Encode(map[string]interface{}{
+				"query":   query,
+				"count":   0,
+				"results": []SearchResult{},
+			})
 		} else {
 			fmt.Printf("No memories found matching: %s\n", query)
 		}
@@ -143,7 +151,11 @@ func handleRecall(cfg *Config) {
 	}
 
 	if jsonOutput {
-		successResponse(results)
+		json.NewEncoder(os.Stdout).Encode(map[string]interface{}{
+			"query":   query,
+			"count":   len(results),
+			"results": results,
+		})
 	} else {
 		fmt.Printf("Found %d memories matching: %s\n\n", len(results), query)
 		for _, result := range results {
