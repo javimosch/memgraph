@@ -28,6 +28,13 @@
     <div class="space-y-4">
       <div class="feature-card border-blue-500/30">
         <span class="tag tag-fix">fix</span>
+        <span class="text-blue-400 text-xs ml-2 font-mono">v1.3.2</span>
+        <h3 class="text-white text-lg font-semibold mt-2">Serve API returns JSON errors for all cases</h3>
+        <p class="text-slate-400 text-sm mt-1">All serve API error responses now return JSON instead of plain text. Unknown nodes → 404 JSON, missing/empty <code>q</code> → 400 JSON, wrong HTTP method → 405 JSON, empty graph → 503 JSON. Added <code>writeJSONError</code> helper for consistent error responses across all API handlers.</p>
+      </div>
+
+      <div class="feature-card border-blue-500/30">
+        <span class="tag tag-fix">fix</span>
         <span class="text-blue-400 text-xs ml-2 font-mono">v1.3.1</span>
         <h3 class="text-white text-lg font-semibold mt-2">--memory-dir override + universal JSON errors</h3>
         <p class="text-slate-400 text-sm mt-1"><code>--memory-dir</code> flag now respected by <code>query</code>, <code>recommend</code>, and <code>related</code> commands. Previously, the global <code>~/.memgraph/skills-graph</code> was always preferred, ignoring the override. All commands now output JSON errors in <code>--json</code> mode (empty args, unknown commands, no command). Global flag scanning moved before command dispatch — <code>memgraph --json recommend</code> and <code>memgraph recommend --json</code> both work.</p>
