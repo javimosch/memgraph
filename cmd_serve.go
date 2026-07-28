@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -237,9 +238,9 @@ func handleServe(cfg *Config) {
 	})
 	mux.HandleFunc("/api/search", func(w http.ResponseWriter, r *http.Request) {
 		state.mu.RLock()
-		idx := state.index
+		g := state.graph
 		state.mu.RUnlock()
-		apiSearchHandler(w, r, cfg, idx)
+		apiSearchHandlerV2(w, r, g)
 	})
 	mux.HandleFunc("/api/sync", func(w http.ResponseWriter, r *http.Request) {
 		if err := state.syncNow(); err != nil {
@@ -334,20 +335,120 @@ func apiNodeHandler(w http.ResponseWriter, r *http.Request, cfg *Config, nodeMap
 		http.NotFound(w, r)
 		return
 	}
-	if _, ok := nodeMap[id]; !ok {
+	node, ok := nodeMap[id]
+	if !ok {
 		http.NotFound(w, r)
 		return
 	}
-	for _, name := range []string{"memory_" + id + ".md", id + ".md"} {
-		path := filepath.Join(cfg.MemoryDir, name)
-		data, err := os.ReadFile(path)
-		if err == nil {
-			w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
-			w.Write(data)
-			return
+	// Return the graph node as JSON (consistent with CLI output)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"id":          node.ID,
+		"name":        node.Name,
+		"description": node.Description,
+		"type":        node.Type,
+		"project":     node.Project,
+		"file_path":   node.FilePath,
+		"tags":        node.Tags,
+		"created":     node.Created,
+		"content":     node.Content,
+	})
+}
+
+// apiSearchHandlerV2 uses the same IDF-weighted scoring as the CLI's
+// `memgraph recommend` command, returning QueryResultItem JSON for consistency.
+func apiSearchHandlerV2(w http.ResponseWriter, r *http.Request, graph *GraphIndex) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if graph == nil || len(graph.Nodes) == 0 {
+		http.Error(w, "graph empty", http.StatusServiceUnavailable)
+		return
+	}
+	q := r.URL.Query().Get("q")
+	if q == "" {
+		http.Error(w, "missing 'q' parameter", http.StatusBadRequest)
+		return
+	}
+	limit := 10
+	if v := r.URL.Query().Get("limit"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			limit = n
 		}
 	}
-	http.NotFound(w, r)
+
+	relatedMap := buildRelatedMap(graph)
+	lookup := buildLookupMap(graph)
+	idf := computeIDF(graph, strings.Fields(stripAccents(strings.ToLower(q))))
+
+	type scored struct {
+		node  Memory
+		score float64
+	}
+	var results []scored
+	for _, n := range graph.Nodes {
+		if n.Type == "namespace" {
+			continue
+		}
+		if n.FilePath != "" && isSubFileReference(n.FilePath, lookup) {
+			continue
+		}
+		s := scoreNode(n, q, idf)
+		if s > 0 {
+			results = append(results, scored{node: n, score: s})
+		}
+	}
+
+	// Graph boost (same as CLI)
+	scoreByID := make(map[string]float64, len(results))
+	for _, r := range results {
+		scoreByID[r.node.ID] = r.score
+	}
+	for i, r := range results {
+		edges := relatedMap[r.node.ID]
+		for _, e := range edges {
+			otherID := e.Target
+			if otherID == r.node.ID {
+				otherID = e.Source
+			}
+			if otherScore, ok := scoreByID[otherID]; ok {
+				results[i].score += otherScore * 0.05
+			}
+		}
+	}
+
+	sort.Slice(results, func(i, j int) bool {
+		if results[i].score != results[j].score {
+			return results[i].score > results[j].score
+		}
+		return results[i].node.Name < results[j].node.Name
+	})
+
+	if len(results) > limit {
+		results = results[:limit]
+	}
+
+	items := make([]QueryResultItem, 0, len(results))
+	for _, r := range results {
+		items = append(items, QueryResultItem{
+			ID:          r.node.ID,
+			Name:        r.node.Name,
+			Description: r.node.Description,
+			Project:     r.node.Project,
+			FilePath:    r.node.FilePath,
+			Score:       r.score,
+			Tags:        r.node.Tags,
+			Related:     getRelatedForNodeLimit(r.node.ID, relatedMap, lookup, 5),
+		})
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"query":   q,
+		"count":   len(items),
+		"results": items,
+	})
 }
 
 func apiSearchHandler(w http.ResponseWriter, r *http.Request, cfg *Config, index *SearchIndex) {
