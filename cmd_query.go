@@ -203,6 +203,7 @@ var queryStopWords = map[string]bool{
 	"need": true, "want": true, "like": true, "also": true,
 	"fix": true, "issue": true, "problem": true, "debug": true,
 	"error": true, "wrong": true, "broken": true, "fail": true,
+	"skill": true, "skills": true, "agent": true, "agents": true,
 }
 
 func scoreNode(node Memory, query string, idf map[string]float64) float64 {
@@ -300,6 +301,39 @@ func scoreNode(node Memory, query string, idf map[string]float64) float64 {
 			}
 		}
 	}
+
+	// All-words-match bonus: if every non-stopword query word matches this node
+	// (in name, desc, extended, project, or tags), give a bonus. This helps
+	// multi-word concept queries like "skill discovery" match skills that
+	// contain both words, rather than skills that strongly match just one word.
+	if len(queryWords) > 1 {
+		allMatch := true
+		anyMatch := false
+		for _, qw := range queryWords {
+			if len(qw) < 3 || isAllDigits(qw) || queryStopWords[qw] {
+				continue
+			}
+			matched := containsWord(name, qw) || containsWord(desc, qw) ||
+				containsWord(extendedDesc, qw) || containsWord(project, qw)
+			if !matched {
+				for _, tag := range node.Tags {
+					if containsWord(strings.ToLower(tag), qw) {
+						matched = true
+						break
+					}
+				}
+			}
+			if matched {
+				anyMatch = true
+			} else {
+				allMatch = false
+			}
+		}
+		if allMatch && anyMatch {
+			score += 50
+		}
+	}
+
 	return score
 }
 
@@ -406,20 +440,29 @@ func containsWord(text, word string) bool {
 			return true
 		}
 	}
-	// Prefix match for 3+ char words: "a2a" matches "a2a-dev", "mongo" matches "mongodb"
-	if len(word) >= 3 {
+	// Prefix match for 4+ char words: "mongo" matches "mongodb", "mongodb" matches "mongo"
+	// Bidirectional but with constraints to prevent false positives like
+	// "rbm2" matching "rbm21" (different containers).
+	if len(word) >= 4 {
 		words := strings.FieldsFunc(text, func(c rune) bool {
 			return c == ' ' || c == '-' || c == '_' || c == '.' || c == ',' || c == '/' || c == '(' || c == ')'
 		})
 		for _, w := range words {
+			if w == word {
+				return true
+			}
+			// Query word is prefix of text word: "mongo" matches "mongodb"
 			if strings.HasPrefix(w, word) && len(w) <= len(word)+4 {
 				return true
 			}
-			if strings.HasPrefix(word, w) && len(word) <= len(w)+4 {
+			// Text word is prefix of query word: "mongodb" matches "mongo"
+			// Only if text word is at least 5 chars (prevents "rbm2" matching "rbm21")
+			if strings.HasPrefix(word, w) && len(w) >= 5 && len(word) <= len(w)+4 {
 				return true
 			}
 		}
 	}
+	// For 3-char words, use exact match only (handled by hasWordBoundary above)
 	return false
 }
 
@@ -736,9 +779,15 @@ func handleQuery(cfg *Config) {
 func handleRelated(cfg *Config) {
 	args := os.Args[2:]
 	var target string
+	limit := 10
 
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
+		case "--limit", "-l":
+			if i+1 < len(args) {
+				fmt.Sscanf(args[i+1], "%d", &limit)
+				i++
+			}
 		case "--json", "-j":
 			jsonOutput = true
 		case "--memory-dir":
@@ -810,6 +859,12 @@ func handleRelated(cfg *Config) {
 		return related[i].Name < related[j].Name
 	})
 
+	// Apply limit (default 10) to keep output manageable for agents
+	totalRelated := len(related)
+	if limit > 0 && len(related) > limit {
+		related = related[:limit]
+	}
+
 	result := RelatedResult{
 		Skill: QueryResultItem{
 			ID:          node.ID,
@@ -819,7 +874,7 @@ func handleRelated(cfg *Config) {
 			FilePath:    node.FilePath,
 			Tags:        node.Tags,
 		},
-		Count:   len(related),
+		Count:   totalRelated,
 		Related: related,
 	}
 
@@ -925,7 +980,7 @@ func handleRecommend(cfg *Config) {
 		}
 		// Cap graph boost at 30% of the node's own score to prevent
 		// highly-connected nodes from dominating over better word matches
-		if results[i].score > r.score*1.5 {
+		if results[i].score > r.score*1.3 {
 			results[i].score = r.score * 1.3
 		}
 	}

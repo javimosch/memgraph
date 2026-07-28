@@ -106,8 +106,12 @@ func handleConfig(cfg *Config) {
 func handleBridge(cfg *Config) {
 	args, _ := parseCommandArgs(os.Args[2:])
 	if len(args) == 0 {
-		fmt.Fprintf(os.Stderr, "Usage: memgraph bridge <agent-name>\n")
-		fmt.Fprintf(os.Stderr, "Available agents: claude-code, opencode, copilot\n")
+		if jsonOutput {
+			errorResponse(85, "invalid_argument", "Usage: memgraph bridge <agent-name>. Available agents: claude-code, opencode, copilot", false)
+		} else {
+			fmt.Fprintf(os.Stderr, "Usage: memgraph bridge <agent-name>\n")
+			fmt.Fprintf(os.Stderr, "Available agents: claude-code, opencode, copilot\n")
+		}
 		os.Exit(85)
 	}
 
@@ -120,8 +124,12 @@ func handleBridge(cfg *Config) {
 	case "copilot":
 		generateCopilotBridge(cfg)
 	default:
-		fmt.Fprintf(os.Stderr, "Unknown agent: %s\n", agent)
-		fmt.Fprintf(os.Stderr, "Available agents: claude-code, opencode, copilot\n")
+		if jsonOutput {
+			errorResponse(85, "invalid_argument", fmt.Sprintf("Unknown agent: %s. Available agents: claude-code, opencode, copilot", agent), false)
+		} else {
+			fmt.Fprintf(os.Stderr, "Unknown agent: %s\n", agent)
+			fmt.Fprintf(os.Stderr, "Available agents: claude-code, opencode, copilot\n")
+		}
 		os.Exit(85)
 	}
 }

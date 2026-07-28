@@ -91,7 +91,23 @@ func handleSetup(cfg *Config) {
 	graphDir := filepath.Join(getGlobalMemgraphDir(), "skills-graph")
 	var syncDirs []string
 	if syncDir != "" {
-		syncDirs = parseSyncDirs(syncDir)
+		// When --sync-dir is provided, ADD it to the auto-discovered dirs
+		// rather than replacing them (which would overwrite the global graph
+		// with only the specified dir's skills).
+		syncDirs = discoverSkillDirs()
+		extra := parseSyncDirs(syncDir)
+		for _, d := range extra {
+			found := false
+			for _, existing := range syncDirs {
+				if existing == d {
+					found = true
+					break
+				}
+			}
+			if !found {
+				syncDirs = append(syncDirs, d)
+			}
+		}
 	} else {
 		syncDirs = discoverSkillDirs()
 	}

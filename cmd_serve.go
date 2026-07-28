@@ -425,7 +425,7 @@ func apiSearchHandlerV2(w http.ResponseWriter, r *http.Request, graph *GraphInde
 			}
 		}
 		// Cap graph boost at 30% of the node's own score
-		if results[i].score > r.score*1.5 {
+		if results[i].score > r.score*1.3 {
 			results[i].score = r.score * 1.3
 		}
 	}
