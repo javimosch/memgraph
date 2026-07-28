@@ -395,8 +395,12 @@ func apiSearchHandlerV2(w http.ResponseWriter, r *http.Request, graph *GraphInde
 	}
 	limit := 10
 	if v := r.URL.Query().Get("limit"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n > 0 {
-			limit = n
+		if n, err := strconv.Atoi(v); err == nil {
+			if n == 0 || n < 0 {
+				limit = 0 // 0 or negative = no limit (consistent with CLI)
+			} else {
+				limit = n
+			}
 		}
 	}
 
@@ -451,7 +455,7 @@ func apiSearchHandlerV2(w http.ResponseWriter, r *http.Request, graph *GraphInde
 		return results[i].node.Name < results[j].node.Name
 	})
 
-	if len(results) > limit {
+	if limit > 0 && len(results) > limit {
 		results = results[:limit]
 	}
 

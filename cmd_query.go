@@ -212,6 +212,7 @@ var queryStopWords = map[string]bool{
 	"fix": true, "issue": true, "problem": true, "debug": true,
 	"error": true, "wrong": true, "broken": true, "fail": true,
 	"skill": true, "skills": true, "agent": true, "agents": true,
+	"git": true, // "git" is too common (many skills mention git); "GitHub" splits to "git"+"hub"
 }
 
 func scoreNode(node Memory, query string, idf map[string]float64) float64 {
