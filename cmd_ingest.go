@@ -340,19 +340,20 @@ func writeSkillGraph(skills []skillInput, targetDir string, cfg *Config) (*skill
 func handleGraphFromDir(cfg *Config) {
 	positional, opts := parseCommandArgs(os.Args[2:])
 
-	targetDir := cfg.MemoryDir
-	if memoryDir == "" {
-		targetDir = filepath.Join(getGlobalMemgraphDir(), "skills-graph")
-	}
-	cfg.MemoryDir = targetDir
-
 	fallbackProject := ""
 	if opts.ProjectSet {
 		fallbackProject = opts.Project
 	}
 
 	// If no directory specified, auto-discover all standard skill directories
+	// and write to the global graph (~/.memgraph/skills-graph).
 	if len(positional) == 0 {
+		targetDir := cfg.MemoryDir
+		if memoryDir == "" {
+			targetDir = filepath.Join(getGlobalMemgraphDir(), "skills-graph")
+		}
+		cfg.MemoryDir = targetDir
+
 		dirs := discoverSkillDirs()
 		if len(dirs) == 0 {
 			errorResponse(80, "missing_argument", "No skill directories found. Usage: memgraph graph-from-dir <dir>", false)
@@ -378,6 +379,14 @@ func handleGraphFromDir(cfg *Config) {
 		}
 		return
 	}
+
+	// Specific directory provided: write to project-local memory dir by default
+	// to avoid overwriting the global skills graph. Use --memory-dir to override.
+	targetDir := cfg.MemoryDir
+	if memoryDir != "" {
+		targetDir = memoryDir
+	}
+	cfg.MemoryDir = targetDir
 
 	sourceDir := positional[0]
 	if _, err := os.Stat(sourceDir); os.IsNotExist(err) {

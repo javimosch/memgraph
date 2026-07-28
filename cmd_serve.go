@@ -247,6 +247,10 @@ func handleServe(cfg *Config) {
 		apiSearchHandlerV2(w, r, g)
 	})
 	mux.HandleFunc("/api/sync", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
 		if err := state.syncNow(); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -384,7 +388,7 @@ func apiSearchHandlerV2(w http.ResponseWriter, r *http.Request, graph *GraphInde
 
 	relatedMap := buildRelatedMap(graph)
 	lookup := buildLookupMap(graph)
-	idf := computeIDF(graph, strings.Fields(stripAccents(strings.ToLower(q))))
+	idf := computeIDF(graph, splitQueryWords(stripAccents(q)))
 
 	type scored struct {
 		node  Memory
@@ -417,8 +421,12 @@ func apiSearchHandlerV2(w http.ResponseWriter, r *http.Request, graph *GraphInde
 				otherID = e.Source
 			}
 			if otherScore, ok := scoreByID[otherID]; ok {
-				results[i].score += otherScore * 0.05
+				results[i].score += otherScore * 0.02
 			}
+		}
+		// Cap graph boost at 30% of the node's own score
+		if results[i].score > r.score*1.5 {
+			results[i].score = r.score * 1.3
 		}
 	}
 

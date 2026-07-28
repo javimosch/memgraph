@@ -21,7 +21,7 @@ func handleRemember(cfg *Config) {
 	}
 
 	if content == "" {
-		if noInteractive {
+		if jsonOutput || noInteractive {
 			errorResponse(85, "invalid_argument", "Content required for remember command", false)
 			os.Exit(85)
 		}

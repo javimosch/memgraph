@@ -251,12 +251,14 @@ func scoreNode(node Memory, query string, idf map[string]float64) float64 {
 	if project != "" && len(project) >= 3 && !queryStopWords[project] {
 		if isSpecificProjectName(project) {
 			if containsWord(q, project) {
-				score += 40
+				score += 30
 			}
 		}
 	}
 	// Word-level matches (skip stop words, use word-boundary matching, IDF-weighted)
-	queryWords := strings.Fields(q)
+	// Note: splitQueryWords must be called on the original query (before lowercasing)
+	// so that camelCase splitting works. The function already lowercases the output.
+	queryWords := splitQueryWords(query)
 	for _, qw := range queryWords {
 		if len(qw) < 3 {
 			continue
@@ -462,6 +464,46 @@ func isAllDigits(s string) bool {
 	return true
 }
 
+// splitQueryWords splits a query string into words, handling camelCase,
+// dots, slashes, underscores, and hyphens as word boundaries.
+// E.g. "a2aUseCase" → ["a2a", "use", "case"], "jar/rbm21/manage" → ["jar", "rbm21", "manage"]
+// All-caps words like "JWT" or "API" are kept as whole words, not split per-letter.
+// Accents are stripped from each word for accent-insensitive matching.
+func splitQueryWords(s string) []string {
+	// First, insert spaces before uppercase letters (camelCase split)
+	// but don't split all-caps words (JWT, API, SSL, etc.)
+	var sb strings.Builder
+	runes := []rune(s)
+	for i := 0; i < len(runes); i++ {
+		c := runes[i]
+		if c >= 'A' && c <= 'Z' {
+			// Check if this is part of an all-caps run (2+ consecutive uppercase)
+			isAllCaps := false
+			if i > 0 && runes[i-1] >= 'A' && runes[i-1] <= 'Z' {
+				isAllCaps = true
+			}
+			if i+1 < len(runes) && runes[i+1] >= 'A' && runes[i+1] <= 'Z' {
+				isAllCaps = true
+			}
+			if !isAllCaps && i > 0 {
+				sb.WriteByte(' ')
+			}
+			sb.WriteRune(c + 32) // lowercase
+		} else {
+			sb.WriteRune(c)
+		}
+	}
+	// Now split on whitespace, hyphens, underscores, dots, slashes, etc.
+	words := strings.FieldsFunc(sb.String(), func(c rune) bool {
+		return c == ' ' || c == '-' || c == '_' || c == '.' || c == '/' || c == '\\' || c == ',' || c == ';' || c == ':' || c == '(' || c == ')'
+	})
+	// Strip accents from each word for accent-insensitive matching
+	for i, w := range words {
+		words[i] = stripAccents(w)
+	}
+	return words
+}
+
 // isSpecificProjectName returns true for project names that are specific enough
 // to boost. Generic single-word projects like "agent", "jar", "am", "general"
 // return false. Specific projects like "tau", "pve2", "supercli", "coolify"
@@ -615,7 +657,7 @@ func handleQuery(cfg *Config) {
 	}
 
 	relatedMap := buildRelatedMap(graph)
-	idf := computeIDF(graph, strings.Fields(strings.ToLower(query)))
+	idf := computeIDF(graph, splitQueryWords(query))
 
 	type scored struct {
 		node  Memory
@@ -845,7 +887,7 @@ func handleRecommend(cfg *Config) {
 	relatedMap := buildRelatedMap(graph)
 
 	// Score all skill nodes
-	idf := computeIDF(graph, strings.Fields(strings.ToLower(task)))
+	idf := computeIDF(graph, splitQueryWords(task))
 	type scored struct {
 		node  Memory
 		score float64
@@ -878,8 +920,13 @@ func handleRecommend(cfg *Config) {
 				otherID = e.Source
 			}
 			if otherScore, ok := scoreByID[otherID]; ok {
-				results[i].score += otherScore * 0.05
+				results[i].score += otherScore * 0.02
 			}
+		}
+		// Cap graph boost at 30% of the node's own score to prevent
+		// highly-connected nodes from dominating over better word matches
+		if results[i].score > r.score*1.5 {
+			results[i].score = r.score * 1.3
 		}
 	}
 
