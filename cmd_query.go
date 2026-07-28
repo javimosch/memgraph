@@ -98,6 +98,14 @@ func buildRelatedMap(graph *GraphIndex) map[string][]GraphEdge {
 	return related
 }
 
+func buildLookupMap(graph *GraphIndex) map[string]Memory {
+	lookup := make(map[string]Memory, len(graph.Nodes))
+	for _, n := range graph.Nodes {
+		lookup[n.ID] = n
+	}
+	return lookup
+}
+
 func nodeToRelatedNode(node Memory, relation string) RelatedNode {
 	return RelatedNode{
 		ID:       node.ID,
@@ -190,13 +198,26 @@ var queryStopWords = map[string]bool{
 	"server": true, "system": true, "app": true, "application": true,
 	"tool": true, "cli": true, "config": true, "help": true,
 	"need": true, "want": true, "like": true, "also": true,
+	"fix": true, "issue": true, "problem": true, "debug": true,
+	"error": true, "wrong": true, "broken": true, "fail": true,
 }
 
 func scoreNode(node Memory, query string, idf map[string]float64) float64 {
-	q := strings.ToLower(query)
-	name := strings.ToLower(node.Name)
-	desc := strings.ToLower(node.Description)
-	project := strings.ToLower(node.Project)
+	q := stripAccents(strings.ToLower(query))
+	name := stripAccents(strings.ToLower(node.Name))
+	desc := stripAccents(strings.ToLower(node.Description))
+	project := stripAccents(strings.ToLower(node.Project))
+	// Extended description: first 1000 chars of content, for deeper keyword matching
+	// This catches terms like "proxmox", "LXC", "exit 132" that are in the skill body
+	// but not in the short frontmatter description.
+	extendedDesc := ""
+	if len(node.Content) > 0 {
+		extended := node.Content
+		if len(extended) > 1000 {
+			extended = extended[:1000]
+		}
+		extendedDesc = stripAccents(strings.ToLower(extended))
+	}
 
 	var score float64
 	// Full-query substring matches only for queries >= 3 chars
@@ -250,6 +271,9 @@ func scoreNode(node Memory, query string, idf map[string]float64) float64 {
 		if containsWord(desc, qw) {
 			score += 5 * weight
 		}
+		if containsWord(extendedDesc, qw) {
+			score += 3 * weight
+		}
 		if containsWord(project, qw) {
 			score += 5 * weight
 		}
@@ -269,16 +293,30 @@ func computeIDF(graph *GraphIndex, queryWords []string) map[string]float64 {
 	if totalDocs == 0 {
 		totalDocs = 1
 	}
+	// Normalize query words with accent stripping
+	normalizedWords := make([]string, 0, len(queryWords))
+	for _, qw := range queryWords {
+		normalizedWords = append(normalizedWords, stripAccents(strings.ToLower(qw)))
+	}
+
 	docFreq := make(map[string]int)
 	for _, n := range graph.Nodes {
 		if n.Type == "namespace" {
 			continue
 		}
-		name := strings.ToLower(n.Name)
-		desc := strings.ToLower(n.Description)
-		project := strings.ToLower(n.Project)
-		combined := name + " " + desc + " " + project
-		for _, qw := range queryWords {
+		name := stripAccents(strings.ToLower(n.Name))
+		desc := stripAccents(strings.ToLower(n.Description))
+		project := stripAccents(strings.ToLower(n.Project))
+		extended := ""
+		if len(n.Content) > 0 {
+			ext := n.Content
+			if len(ext) > 1000 {
+				ext = ext[:1000]
+			}
+			extended = stripAccents(strings.ToLower(ext))
+		}
+		combined := name + " " + desc + " " + project + " " + extended
+		for _, qw := range normalizedWords {
 			if len(qw) < 3 {
 				continue
 			}
@@ -297,7 +335,7 @@ func computeIDF(graph *GraphIndex, queryWords []string) map[string]float64 {
 		}
 	}
 	idf := make(map[string]float64)
-	for _, qw := range queryWords {
+	for _, qw := range normalizedWords {
 		if len(qw) < 3 {
 			continue
 		}
@@ -409,6 +447,48 @@ func isAllDigits(s string) bool {
 	return true
 }
 
+// stripAccents removes diacritical marks from common Latin characters.
+// Handles French, Spanish, German, Portuguese, Italian accents.
+func stripAccents(s string) string {
+	// Fast path: if no non-ASCII bytes, return as-is
+	ascii := true
+	for i := 0; i < len(s); i++ {
+		if s[i] >= 0x80 {
+			ascii = false
+			break
+		}
+	}
+	if ascii {
+		return s
+	}
+	// Common accent replacements (UTF-8 sequences → ASCII)
+	replacements := []struct{ from, to string }{
+		{"à", "a"}, {"á", "a"}, {"â", "a"}, {"ã", "a"}, {"ä", "a"}, {"å", "a"},
+		{"ç", "c"},
+		{"è", "e"}, {"é", "e"}, {"ê", "e"}, {"ë", "e"},
+		{"ì", "i"}, {"í", "i"}, {"î", "i"}, {"ï", "i"},
+		{"ñ", "n"},
+		{"ò", "o"}, {"ó", "o"}, {"ô", "o"}, {"õ", "o"}, {"ö", "o"},
+		{"ù", "u"}, {"ú", "u"}, {"û", "u"}, {"ü", "u"},
+		{"ý", "y"}, {"ÿ", "y"},
+		{"À", "A"}, {"Á", "A"}, {"Â", "A"}, {"Ã", "A"}, {"Ä", "A"}, {"Å", "A"},
+		{"Ç", "C"},
+		{"È", "E"}, {"É", "E"}, {"Ê", "E"}, {"Ë", "E"},
+		{"Ì", "I"}, {"Í", "I"}, {"Î", "I"}, {"Ï", "I"},
+		{"Ñ", "N"},
+		{"Ò", "O"}, {"Ó", "O"}, {"Ô", "O"}, {"Õ", "O"}, {"Ö", "O"},
+		{"Ù", "U"}, {"Ú", "U"}, {"Û", "U"}, {"Ü", "U"},
+		{"Ý", "Y"},
+		{"œ", "oe"}, {"Œ", "OE"}, {"æ", "ae"}, {"Æ", "AE"},
+		{"ß", "ss"},
+	}
+	r := s
+	for _, rep := range replacements {
+		r = strings.ReplaceAll(r, rep.from, rep.to)
+	}
+	return r
+}
+
 // isSubFileReference checks if a file path is a sub-file of a skill directory
 // (e.g., README.md, references/dev.md) rather than the skill's main file.
 func isSubFileReference(filePath string, lookup map[string]Memory) bool {
@@ -492,6 +572,10 @@ func handleQuery(cfg *Config) {
 	var results []scored
 	for _, n := range graph.Nodes {
 		if n.Type == "namespace" {
+			continue
+		}
+		// Filter out sub-file references (README.md, references/*.md, etc.)
+		if n.FilePath != "" && isSubFileReference(n.FilePath, lookup) {
 			continue
 		}
 		s := scoreNode(n, query, idf)
@@ -705,6 +789,10 @@ func handleRecommend(cfg *Config) {
 	var results []scored
 	for _, n := range graph.Nodes {
 		if n.Type == "namespace" {
+			continue
+		}
+		// Filter out sub-file references (README.md, references/*.md, etc.)
+		if n.FilePath != "" && isSubFileReference(n.FilePath, lookup) {
 			continue
 		}
 		s := scoreNode(n, task, idf)
