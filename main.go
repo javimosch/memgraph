@@ -13,23 +13,9 @@ var (
 )
 
 func main() {
-	if len(os.Args) < 2 {
-		printHelp()
-		os.Exit(85)
-	}
-
-	command := os.Args[1]
-
-	if command == "--help" || command == "-h" || command == "help" {
-		printHelp()
-		return
-	}
-	if command == "--version" || command == "-v" || command == "version" {
-		handleVersion()
-		return
-	}
-
-	for i := 2; i < len(os.Args); i++ {
+	// Scan ALL args for global flags first, so jsonOutput is set
+	// before any command dispatch or error handling.
+	for i := 1; i < len(os.Args); i++ {
 		arg := os.Args[i]
 		switch {
 		case arg == "--json" || arg == "-j":
@@ -44,6 +30,38 @@ func main() {
 		case strings.HasPrefix(arg, "--memory-dir="):
 			memoryDir = strings.TrimPrefix(arg, "--memory-dir=")
 		}
+	}
+
+	// Find the first non-flag argument as the command
+	command := ""
+	for i := 1; i < len(os.Args); i++ {
+		arg := os.Args[i]
+		if !strings.HasPrefix(arg, "-") {
+			command = arg
+			break
+		}
+		// Skip the value for --memory-dir
+		if arg == "--memory-dir" && i+1 < len(os.Args) {
+			i++
+		}
+	}
+
+	if command == "" {
+		if jsonOutput {
+			errorResponse(85, "missing_command", "No command provided. Run 'memgraph --help' for available commands.", false)
+		} else {
+			printHelp()
+		}
+		os.Exit(85)
+	}
+
+	if command == "--help" || command == "-h" || command == "help" {
+		printHelp()
+		return
+	}
+	if command == "--version" || command == "-v" || command == "version" {
+		handleVersion()
+		return
 	}
 
 	cfg := Config{
@@ -102,8 +120,12 @@ func main() {
 	case "serve":
 		handleServe(&cfg)
 	default:
-		fmt.Fprintf(os.Stderr, "Unknown command: %s\n", command)
-		printHelp()
+		if jsonOutput {
+			errorResponse(85, "unknown_command", fmt.Sprintf("Unknown command: %s. Run 'memgraph --help' for available commands.", command), false)
+		} else {
+			fmt.Fprintf(os.Stderr, "Unknown command: %s\n", command)
+			printHelp()
+		}
 		os.Exit(85)
 	}
 }

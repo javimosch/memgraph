@@ -51,10 +51,16 @@ type RecommendResult struct {
 }
 
 func loadGraphForQuery(cfg *Config) (*GraphIndex, map[string]Memory, error) {
-	// Prefer the global ~/.memgraph/skills-graph path (the canonical skill graph)
-	// over project-specific memory dirs, which may have stale graphs.
 	var candidates []string
 
+	// If memoryDir was explicitly set via --memory-dir, try it FIRST
+	// (before the global graph) so the user's override is respected.
+	if memoryDir != "" {
+		candidates = append(candidates, memoryDir)
+	}
+
+	// Prefer the global ~/.memgraph/skills-graph path (the canonical skill graph)
+	// over project-specific memory dirs, which may have stale graphs.
 	if home, err := os.UserHomeDir(); err == nil {
 		candidates = append(candidates,
 			filepath.Join(home, ".memgraph", "skills-graph"),
@@ -71,8 +77,10 @@ func loadGraphForQuery(cfg *Config) (*GraphIndex, map[string]Memory, error) {
 		}
 	}
 
-	// Add the configured memory dir as a fallback
-	candidates = append(candidates, cfg.MemoryDir)
+	// Add the configured memory dir as a fallback (if not already added)
+	if memoryDir == "" {
+		candidates = append(candidates, cfg.MemoryDir)
+	}
 
 	for _, path := range candidates {
 		graphFile := filepath.Join(path, "graph.json")
@@ -685,7 +693,11 @@ func handleQuery(cfg *Config) {
 	query := strings.Join(queryParts, " ")
 
 	if query == "" {
-		fmt.Fprintln(os.Stderr, "Usage: memgraph query <text> [--limit N] [--json]")
+		if jsonOutput {
+			errorResponse(85, "invalid_argument", "Query text required for query command", false)
+		} else {
+			fmt.Fprintln(os.Stderr, "Usage: memgraph query <text> [--limit N] [--json]")
+		}
 		os.Exit(85)
 	}
 
@@ -802,7 +814,11 @@ func handleRelated(cfg *Config) {
 	}
 
 	if target == "" {
-		fmt.Fprintln(os.Stderr, "Usage: memgraph related <skill-id-or-name> [--json]")
+		if jsonOutput {
+			errorResponse(85, "invalid_argument", "Skill ID or name required for related command", false)
+		} else {
+			fmt.Fprintln(os.Stderr, "Usage: memgraph related <skill-id-or-name> [--json]")
+		}
 		os.Exit(85)
 	}
 
@@ -925,7 +941,11 @@ func handleRecommend(cfg *Config) {
 	task := strings.Join(taskParts, " ")
 
 	if task == "" {
-		fmt.Fprintln(os.Stderr, "Usage: memgraph recommend <task description> [--limit N] [--json]")
+		if jsonOutput {
+			errorResponse(85, "invalid_argument", "Task description required for recommend command", false)
+		} else {
+			fmt.Fprintln(os.Stderr, "Usage: memgraph recommend <task description> [--limit N] [--json]")
+		}
 		os.Exit(85)
 	}
 
