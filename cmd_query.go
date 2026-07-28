@@ -144,8 +144,15 @@ func getRelatedForNodeLimit(nodeID string, relatedMap map[string][]GraphEdge, lo
 		if n.Type == "namespace" {
 			continue
 		}
-		// Filter out sub-file references (no SKILL.md, just .md files inside skill dirs)
+		// Filter out sub-file references — nodes that are .md files inside a
+		// skill directory but aren't the skill's main file (SKILL.md or the
+		// dir-name.md). We detect this by checking if the filename is a common
+		// sub-file name (README, references/*, etc.) OR if there's a SKILL.md
+		// in the same directory (meaning this node is a sub-file of that skill).
 		if n.FilePath == "" {
+			continue
+		}
+		if isSubFileReference(n.FilePath, lookup) {
 			continue
 		}
 		related = append(related, nodeToRelatedNode(n, e.Relation))
@@ -216,6 +223,10 @@ func scoreNode(node Memory, query string, idf map[string]float64) float64 {
 	queryWords := strings.Fields(q)
 	for _, qw := range queryWords {
 		if len(qw) < 3 {
+			continue
+		}
+		// Skip pure numbers (port numbers, version numbers — not useful for skill search)
+		if isAllDigits(qw) {
 			continue
 		}
 		// Check stop words on both the word and its singular form
@@ -384,6 +395,54 @@ func hasWordBoundary(text, word string) bool {
 
 func isWordChar(c byte) bool {
 	return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')
+}
+
+func isAllDigits(s string) bool {
+	if s == "" {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		if s[i] < '0' || s[i] > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+// isSubFileReference checks if a file path is a sub-file of a skill directory
+// (e.g., README.md, references/dev.md) rather than the skill's main file.
+func isSubFileReference(filePath string, lookup map[string]Memory) bool {
+	lower := strings.ToLower(filePath)
+	base := filepath.Base(lower)
+	// The main skill file is never a sub-file
+	if base == "skill.md" {
+		return false
+	}
+	// A standalone .md file in the skills root (like agent-exchange.md) is a
+	// real skill, not a sub-file — it has no directory/skill.md sibling.
+	// Detect: path is .../skills/<name>.md (no intermediate directory)
+	parts := strings.Split(strings.TrimSuffix(lower, "/"), "/")
+	if len(parts) >= 2 && parts[len(parts)-2] == "skills" && base == strings.ToLower(parts[len(parts)-1]) {
+		return false
+	}
+	// README.md is always a sub-file
+	if base == "readme.md" {
+		return true
+	}
+	// Files inside a references/ subdirectory are sub-files
+	if strings.Contains(lower, "/references/") {
+		return true
+	}
+	// If there's a SKILL.md in the same directory, this file is a sub-file
+	// (it's a sibling of the main skill file)
+	dir := filepath.Dir(filePath)
+	skillPath := filepath.Join(dir, "SKILL.md")
+	for _, n := range lookup {
+		if strings.EqualFold(n.FilePath, skillPath) {
+			return true
+		}
+	}
+	return false
 }
 
 func handleQuery(cfg *Config) {
