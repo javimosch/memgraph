@@ -22,12 +22,62 @@
     <header class="mb-16">
       <a href="changelog.html" class="text-blue-400 hover:text-blue-300 text-sm mb-6 inline-block transition-colors">&larr; All changelogs</a>
       <h1 class="text-5xl font-bold text-white mt-4 tracking-tight">July 2026</h1>
-      <p class="text-slate-400 mt-3 text-lg">Rebrand, galaxy visualization, and multi-source sync</p>
+      <p class="text-slate-400 mt-3 text-lg">Skill discovery engine, agent onboarding, API consistency</p>
     </header>
 
     <div class="space-y-4">
+      <div class="feature-card border-blue-500/30">
+        <span class="tag tag-feat">feat</span>
+        <span class="text-blue-400 text-xs ml-2 font-mono">v1.1.0</span>
+        <h3 class="text-white text-lg font-semibold mt-2">Skill Discovery Engine</h3>
+        <p class="text-slate-400 text-sm mt-1">Three new commands for finding relevant skills: <code>memgraph recommend "&lt;task&gt;"</code> ranks skills by relevance to a task description, <code>memgraph query "&lt;keywords&gt;"</code> searches by keyword, <code>memgraph related "&lt;skill&gt;"</code> gets connected skills. Scoring uses IDF weighting, accent folding, project name boost, extended content matching, graph-based relatedness, stop words, and stemming. 212 skills from 4 directories.</p>
+      </div>
+
+      <div class="feature-card border-blue-500/30">
+        <span class="tag tag-feat">feat</span>
+        <span class="text-blue-400 text-xs ml-2 font-mono">v1.1.0</span>
+        <h3 class="text-white text-lg font-semibold mt-2">One-command agent onboarding</h3>
+        <p class="text-slate-400 text-sm mt-1"><code>memgraph setup</code> auto-discovers all 4 skill directories, ingests them into the graph, upserts AGENTS.md with usage instructions, and creates .devin/skills/memgraph-usage/SKILL.md. Agents in the repo will now discover and use memgraph for skill lookup before starting work.</p>
+      </div>
+
+      <div class="feature-card border-blue-500/30">
+        <span class="tag tag-feat">feat</span>
+        <span class="text-blue-400 text-xs ml-2 font-mono">v1.1.0</span>
+        <h3 class="text-white text-lg font-semibold mt-2">Auto-discover all skill directories</h3>
+        <p class="text-slate-400 text-sm mt-1"><code>memgraph graph-from-dir</code> (no arg) and <code>memgraph serve</code> (no --sync-dir) now auto-discover all 4 standard skill directories. Previously only a single explicitly-specified directory was ingested, causing 17 skills in ~/.config/devin/skills to be missing from the graph. Graph grew from 195 to 212 skills.</p>
+      </div>
+
+      <div class="feature-card border-blue-500/30">
+        <span class="tag tag-fix">fix</span>
+        <span class="text-blue-400 text-xs ml-2 font-mono">v1.1.0</span>
+        <h3 class="text-white text-lg font-semibold mt-2">HTTP API consistency</h3>
+        <p class="text-slate-400 text-sm mt-1"><code>/api/search</code> now uses the same IDF-weighted scoring as the CLI and returns <code>QueryResultItem</code> JSON. <code>/api/nodes/&lt;id&gt;</code> returns JSON from the graph node (was raw markdown frontmatter). All endpoints return proper JSON errors.</p>
+      </div>
+
+      <div class="feature-card border-blue-500/30">
+        <span class="tag tag-fix">fix</span>
+        <span class="text-blue-400 text-xs ml-2 font-mono">v1.1.0</span>
+        <h3 class="text-white text-lg font-semibold mt-2">JSON format consistency across all commands</h3>
+        <p class="text-slate-400 text-sm mt-1">All 15+ commands now output raw JSON (no <code>{version, data}</code> wrapper). Memory and graph commands all use consistent <code>{count, results}</code> or <code>{id, status}</code> formats. Errors output <code>{error: {code, type, message}}</code> in --json mode.</p>
+      </div>
+
+      <div class="feature-card border-blue-500/30">
+        <span class="tag tag-feat">feat</span>
+        <span class="text-blue-400 text-xs ml-2 font-mono">v1.1.0</span>
+        <h3 class="text-white text-lg font-semibold mt-2">Bridge templates include skill discovery</h3>
+        <p class="text-slate-400 text-sm mt-1">All 3 agent bridges (claude-code, opencode, copilot) now include a "Skill Discovery" section with <code>memgraph recommend</code>, <code>memgraph query</code>, and <code>memgraph related</code> commands. Previously only memory commands were documented.</p>
+      </div>
+
+      <div class="feature-card border-blue-500/30">
+        <span class="tag tag-perf">perf</span>
+        <span class="text-blue-400 text-xs ml-2 font-mono">v1.1.0</span>
+        <h3 class="text-white text-lg font-semibold mt-2">70% token reduction in recommend output</h3>
+        <p class="text-slate-400 text-sm mt-1">Filtered namespace nodes and sub-file references from results. Limited <code>related</code> field to 5 items sorted by relation priority. Sub-file references (README.md, references/*.md) excluded from main query and recommend results.</p>
+      </div>
+
       <div class="feature-card">
         <span class="tag tag-refactor">refactor</span>
+        <span class="text-blue-400 text-xs ml-2 font-mono">v1.0.0</span>
         <h3 class="text-white text-lg font-semibold mt-2">Galaxy view is now the sole UI</h3>
         <p class="text-slate-400 text-sm mt-1">Removed the 2D Cytoscape.js and 3D Three.js views. The Via Lactea galaxy visualization is now served at the root path. Unknown paths return 404. 834 lines of dead code deleted.</p>
       </div>
