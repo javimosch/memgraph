@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -22,7 +23,7 @@ func handleInit(cfg *Config) {
 	}
 
 	if jsonOutput {
-		successResponse(map[string]interface{}{
+		json.NewEncoder(os.Stdout).Encode(map[string]interface{}{
 			"status": "initialized",
 			"path":   cfg.MemoryDir,
 		})
@@ -36,7 +37,7 @@ func handleStatus(cfg *Config) {
 	memoryPath := cfg.MemoryDir
 	if _, err := os.Stat(memoryPath); os.IsNotExist(err) {
 		if jsonOutput {
-			successResponse(map[string]interface{}{"status": "uninitialized"})
+			json.NewEncoder(os.Stdout).Encode(map[string]interface{}{"status": "uninitialized"})
 		} else {
 			fmt.Println("Memory system status: uninitialized")
 			fmt.Println("Run 'memgraph init' to initialize.")
@@ -58,7 +59,7 @@ func handleStatus(cfg *Config) {
 	}
 
 	if jsonOutput {
-		successResponse(map[string]interface{}{
+		json.NewEncoder(os.Stdout).Encode(map[string]interface{}{
 			"status": "active",
 			"path":   memoryPath,
 			"count":  memoryCount,
@@ -73,7 +74,7 @@ func handleStatus(cfg *Config) {
 func handleConfig(cfg *Config) {
 	globalDir := getGlobalMemgraphDir()
 	if jsonOutput {
-		successResponse(map[string]interface{}{
+		json.NewEncoder(os.Stdout).Encode(map[string]interface{}{
 			"global_directory": globalDir,
 			"memory_directory": cfg.MemoryDir,
 			"project_root":     cfg.ProjectRoot,
@@ -176,7 +177,7 @@ func handleProfile(cfg *Config) {
 	topTags := topTags(tagCounts, 5)
 
 	if jsonOutput {
-		successResponse(map[string]interface{}{
+		json.NewEncoder(os.Stdout).Encode(map[string]interface{}{
 			"total":        total,
 			"by_type":      byType,
 			"by_project":   byProject,

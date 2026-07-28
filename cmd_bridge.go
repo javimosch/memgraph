@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 )
@@ -9,6 +10,25 @@ func generateClaudeCodeBridge(cfg *Config) {
 	claudeMDContent := fmt.Sprintf(`# Memgraph Integration for Claude Code
 
 This file provides project-specific memory for Claude Code via memgraph CLI.
+
+## Skill Discovery (IMPORTANT — run before starting any task)
+
+Before starting any non-trivial task, use memgraph to find relevant skills:
+
+%%bash
+# Get skill recommendations for your current task (ranked by relevance)
+memgraph recommend "your task description" --json
+
+# Search the skill graph by keyword
+memgraph query "keywords" --json
+
+# Get skills related to a specific skill
+memgraph related "skill-name" --json
+%%
+
+The '--json' flag outputs structured data. Read the "file_path" field to load
+the full skill content. Always check 'memgraph recommend' first — it ranks
+skills by relevance and surfaces related skills you might miss by grepping.
 
 ## Memory Loading
 
@@ -44,6 +64,7 @@ The following bridge commands are available:
 - /mg - Access memgraph functionality
 - /mg remember <content> - Add a memory
 - /mg recall [query] - Retrieve memories
+- /mg recommend <task> - Get skill recommendations
 - /mg status - Check memory system status
 - /mg config - Show configuration and storage location
 `, cfg.MemoryDir)
@@ -59,7 +80,7 @@ The following bridge commands are available:
 	}
 
 	if jsonOutput {
-		successResponse(map[string]interface{}{
+		json.NewEncoder(os.Stdout).Encode(map[string]interface{}{
 			"status":      "bridge_created",
 			"agent":       "claude-code",
 			"config_file": claudeMDPath,
@@ -73,6 +94,24 @@ The following bridge commands are available:
 
 func generateOpenCodeBridge(cfg *Config) {
 	opencodeConfig := fmt.Sprintf(`# Memgraph Integration for OpenCode
+
+## Skill Discovery (IMPORTANT — run before starting any task)
+
+Before starting any non-trivial task, use memgraph to find relevant skills:
+
+%%bash
+# Get skill recommendations for your current task (ranked by relevance)
+memgraph recommend "your task description" --json
+
+# Search the skill graph by keyword
+memgraph query "keywords" --json
+
+# Get skills related to a specific skill
+memgraph related "skill-name" --json
+%%
+
+The '--json' flag outputs structured data. Read the "file_path" field to load
+the full skill content.
 
 ## Configuration
 
@@ -110,7 +149,7 @@ memgraph remember "Project-specific context"
 	}
 
 	if jsonOutput {
-		successResponse(map[string]interface{}{
+		json.NewEncoder(os.Stdout).Encode(map[string]interface{}{
 			"status":      "bridge_created",
 			"agent":       "opencode",
 			"config_file": configPath,
@@ -124,6 +163,24 @@ memgraph remember "Project-specific context"
 
 func generateCopilotBridge(cfg *Config) {
 	copilotConfig := fmt.Sprintf(`# Memgraph Integration for GitHub Copilot
+
+## Skill Discovery (IMPORTANT — run before starting any task)
+
+Before starting any non-trivial task, use memgraph to find relevant skills:
+
+%%bash
+# Get skill recommendations for your current task (ranked by relevance)
+memgraph recommend "your task description" --json
+
+# Search the skill graph by keyword
+memgraph query "keywords" --json
+
+# Get skills related to a specific skill
+memgraph related "skill-name" --json
+%%
+
+The '--json' flag outputs structured data. Read the "file_path" field to load
+the full skill content.
 
 ## Configuration
 
@@ -161,7 +218,7 @@ memgraph remember "Important project context"
 	}
 
 	if jsonOutput {
-		successResponse(map[string]interface{}{
+		json.NewEncoder(os.Stdout).Encode(map[string]interface{}{
 			"status":      "bridge_created",
 			"agent":       "copilot",
 			"config_file": configPath,

@@ -181,6 +181,10 @@ func handleServe(cfg *Config) {
 	if len(syncDirs) == 0 && cfg.GlobalConfig.AutoSyncDir != "" {
 		syncDirs = parseSyncDirs(cfg.GlobalConfig.AutoSyncDir)
 	}
+	// Auto-discover all standard skill directories if no sync-dir was specified
+	if len(syncDirs) == 0 {
+		syncDirs = discoverSkillDirs()
+	}
 
 	state := &serverState{
 		graph:     graph,

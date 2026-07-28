@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"io/fs"
 	"os"
@@ -338,16 +339,6 @@ func writeSkillGraph(skills []skillInput, targetDir string, cfg *Config) (*skill
 
 func handleGraphFromDir(cfg *Config) {
 	positional, opts := parseCommandArgs(os.Args[2:])
-	if len(positional) < 1 {
-		errorResponse(80, "missing_argument", "Usage: memgraph graph-from-dir <dir> [--memory-dir <target>] [--project <project>]", false)
-		os.Exit(80)
-	}
-
-	sourceDir := positional[0]
-	if _, err := os.Stat(sourceDir); os.IsNotExist(err) {
-		errorResponse(92, "resource_error", fmt.Sprintf("Directory not found: %s", sourceDir), false)
-		os.Exit(92)
-	}
 
 	targetDir := cfg.MemoryDir
 	if memoryDir == "" {
@@ -360,6 +351,40 @@ func handleGraphFromDir(cfg *Config) {
 		fallbackProject = opts.Project
 	}
 
+	// If no directory specified, auto-discover all standard skill directories
+	if len(positional) == 0 {
+		dirs := discoverSkillDirs()
+		if len(dirs) == 0 {
+			errorResponse(80, "missing_argument", "No skill directories found. Usage: memgraph graph-from-dir <dir>", false)
+			os.Exit(80)
+		}
+		graph, skillCount, namespaceCount, err := ingestMultiDir(dirs, targetDir, cfg)
+		if err != nil {
+			errorResponse(92, "resource_error", err.Error(), false)
+			os.Exit(92)
+		}
+		if jsonOutput {
+			json.NewEncoder(os.Stdout).Encode(map[string]interface{}{
+				"sources":     dirs,
+				"target":      targetDir,
+				"skills":      skillCount,
+				"namespaces":  namespaceCount,
+				"nodes":       len(graph.Nodes),
+				"edges":       len(graph.Edges),
+			})
+		} else {
+			fmt.Printf("Ingested %d skills from %d directories into %s\n", skillCount, len(dirs), targetDir)
+			fmt.Printf("Namespaces: %d, Total nodes: %d, Edges: %d\n", namespaceCount, len(graph.Nodes), len(graph.Edges))
+		}
+		return
+	}
+
+	sourceDir := positional[0]
+	if _, err := os.Stat(sourceDir); os.IsNotExist(err) {
+		errorResponse(92, "resource_error", fmt.Sprintf("Directory not found: %s", sourceDir), false)
+		os.Exit(92)
+	}
+
 	graph, skillCount, namespaceCount, err := ingestSkillsDir(sourceDir, targetDir, fallbackProject, cfg)
 	if err != nil {
 		errorResponse(92, "resource_error", err.Error(), false)
@@ -367,7 +392,7 @@ func handleGraphFromDir(cfg *Config) {
 	}
 
 	if jsonOutput {
-		successResponse(map[string]interface{}{
+		json.NewEncoder(os.Stdout).Encode(map[string]interface{}{
 			"source":     sourceDir,
 			"target":     targetDir,
 			"skills":     skillCount,

@@ -103,7 +103,10 @@ func handleSessions(cfg *Config) {
 	})
 
 	if jsonOutput {
-		successResponse(sessions)
+		json.NewEncoder(os.Stdout).Encode(map[string]interface{}{
+			"count":    len(sessions),
+			"sessions": sessions,
+		})
 	} else {
 		fmt.Printf("Sessions in %s:\n", cfg.MemoryDir)
 		for _, info := range sessions {
@@ -171,7 +174,7 @@ func handleEdit(cfg *Config) {
 	updateSearchIndex(cfg)
 
 	if jsonOutput {
-		successResponse(map[string]interface{}{
+		json.NewEncoder(os.Stdout).Encode(map[string]interface{}{
 			"id":          memoryID,
 			"status":      "updated",
 			"description": description,
@@ -203,7 +206,7 @@ func handleDelete(cfg *Config) {
 	updateSearchIndex(cfg)
 
 	if jsonOutput {
-		successResponse(map[string]interface{}{
+		json.NewEncoder(os.Stdout).Encode(map[string]interface{}{
 			"id":     memoryID,
 			"status": "deleted",
 		})
@@ -311,7 +314,7 @@ func handleImport(cfg *Config) {
 	updateSearchIndex(cfg)
 
 	if jsonOutput {
-		successResponse(map[string]interface{}{
+		json.NewEncoder(os.Stdout).Encode(map[string]interface{}{
 			"imported": imported,
 			"path":     cfg.MemoryDir,
 		})
@@ -417,7 +420,7 @@ func handleDemo(cfg *Config) {
 	updateSearchIndex(cfg)
 
 	if jsonOutput {
-		successResponse(map[string]interface{}{
+		json.NewEncoder(os.Stdout).Encode(map[string]interface{}{
 			"created": len(samples),
 			"path":    cfg.MemoryDir,
 		})

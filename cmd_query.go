@@ -281,7 +281,7 @@ func scoreNode(node Memory, query string, idf map[string]float64) float64 {
 			weight = 1.0
 		}
 		if containsWord(name, qw) {
-			score += 25 * weight
+			score += 30 * weight
 		}
 		if containsWord(desc, qw) {
 			score += 5 * weight
@@ -606,7 +606,11 @@ func handleQuery(cfg *Config) {
 
 	graph, lookup, err := loadGraphForQuery(cfg)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		if jsonOutput {
+			errorResponse(92, "graph_load_error", fmt.Sprintf("%v", err), false)
+		} else {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		}
 		os.Exit(92)
 	}
 
@@ -713,7 +717,11 @@ func handleRelated(cfg *Config) {
 
 	graph, lookup, err := loadGraphForQuery(cfg)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		if jsonOutput {
+			errorResponse(92, "graph_load_error", fmt.Sprintf("%v", err), false)
+		} else {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		}
 		os.Exit(92)
 	}
 
@@ -739,7 +747,11 @@ func handleRelated(cfg *Config) {
 		}
 	}
 	if !found {
-		fmt.Fprintf(os.Stderr, "Skill not found: %s\n", target)
+		if jsonOutput {
+			errorResponse(92, "skill_not_found", fmt.Sprintf("Skill not found: %s", target), false)
+		} else {
+			fmt.Fprintf(os.Stderr, "Skill not found: %s\n", target)
+		}
 		os.Exit(92)
 	}
 
@@ -822,7 +834,11 @@ func handleRecommend(cfg *Config) {
 
 	graph, lookup, err := loadGraphForQuery(cfg)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		if jsonOutput {
+			errorResponse(92, "graph_load_error", fmt.Sprintf("%v", err), false)
+		} else {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		}
 		os.Exit(92)
 	}
 
