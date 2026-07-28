@@ -23,6 +23,20 @@ import (
 //go:embed ui/*
 var uiFS embed.FS
 
+// writeJSONError writes a JSON error response to an HTTP response writer.
+func writeJSONError(w http.ResponseWriter, code int, errType, message string, recoverable bool) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(code)
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"error": map[string]interface{}{
+			"code":        code,
+			"type":        errType,
+			"message":     message,
+			"recoverable": recoverable,
+		},
+	})
+}
+
 func isClientDisconnect(err error) bool {
 	if err == nil {
 		return false
@@ -248,11 +262,11 @@ func handleServe(cfg *Config) {
 	})
 	mux.HandleFunc("/api/sync", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			writeJSONError(w, http.StatusMethodNotAllowed, "method_not_allowed", "Method not allowed", false)
 			return
 		}
 		if err := state.syncNow(); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			writeJSONError(w, http.StatusInternalServerError, "internal_error", err.Error(), false)
 			return
 		}
 		state.mu.RLock()
@@ -301,7 +315,7 @@ func handleServe(cfg *Config) {
 
 func apiGraphHandler(w http.ResponseWriter, r *http.Request, graph *GraphIndex) {
 	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		writeJSONError(w, http.StatusMethodNotAllowed, "method_not_allowed", "Method not allowed", false)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -312,7 +326,7 @@ func apiGraphHandler(w http.ResponseWriter, r *http.Request, graph *GraphIndex) 
 
 func apiNodesHandler(w http.ResponseWriter, r *http.Request, graph *GraphIndex) {
 	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		writeJSONError(w, http.StatusMethodNotAllowed, "method_not_allowed", "Method not allowed", false)
 		return
 	}
 	infos := make([]nodeInfo, 0, len(graph.Nodes))
@@ -335,17 +349,17 @@ func apiNodesHandler(w http.ResponseWriter, r *http.Request, graph *GraphIndex) 
 
 func apiNodeHandler(w http.ResponseWriter, r *http.Request, cfg *Config, nodeMap map[string]Memory) {
 	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		writeJSONError(w, http.StatusMethodNotAllowed, "method_not_allowed", "Method not allowed. Use GET.", false)
 		return
 	}
 	id := strings.TrimPrefix(r.URL.Path, "/api/nodes/")
 	if id == "" || strings.ContainsAny(id, "/\\") {
-		http.NotFound(w, r)
+		writeJSONError(w, http.StatusNotFound, "not_found", "Node not found", false)
 		return
 	}
 	node, ok := nodeMap[id]
 	if !ok {
-		http.NotFound(w, r)
+		writeJSONError(w, http.StatusNotFound, "not_found", fmt.Sprintf("Node not found: %s", id), false)
 		return
 	}
 	// Return the graph node as JSON (consistent with CLI output)
@@ -367,16 +381,16 @@ func apiNodeHandler(w http.ResponseWriter, r *http.Request, cfg *Config, nodeMap
 // `memgraph recommend` command, returning QueryResultItem JSON for consistency.
 func apiSearchHandlerV2(w http.ResponseWriter, r *http.Request, graph *GraphIndex) {
 	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		writeJSONError(w, http.StatusMethodNotAllowed, "method_not_allowed", "Method not allowed", false)
 		return
 	}
 	if graph == nil || len(graph.Nodes) == 0 {
-		http.Error(w, "graph empty", http.StatusServiceUnavailable)
+		writeJSONError(w, http.StatusServiceUnavailable, "graph_empty", "Graph is empty. Run 'memgraph graph-from-dir' first.", false)
 		return
 	}
 	q := r.URL.Query().Get("q")
 	if q == "" {
-		http.Error(w, "missing 'q' parameter", http.StatusBadRequest)
+		writeJSONError(w, http.StatusBadRequest, "invalid_argument", "Missing 'q' parameter", false)
 		return
 	}
 	limit := 10
@@ -465,11 +479,11 @@ func apiSearchHandlerV2(w http.ResponseWriter, r *http.Request, graph *GraphInde
 
 func apiSearchHandler(w http.ResponseWriter, r *http.Request, cfg *Config, index *SearchIndex) {
 	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		writeJSONError(w, http.StatusMethodNotAllowed, "method_not_allowed", "Method not allowed", false)
 		return
 	}
 	if index == nil {
-		http.Error(w, "search index empty", http.StatusServiceUnavailable)
+		writeJSONError(w, http.StatusServiceUnavailable, "search_index_empty", "Search index is empty", false)
 		return
 	}
 	q := r.URL.Query().Get("q")
@@ -500,7 +514,7 @@ func apiSearchHandler(w http.ResponseWriter, r *http.Request, cfg *Config, index
 func serveFileFromFS(w http.ResponseWriter, r *http.Request, staticFS fs.FS, name, contentType string) {
 	data, err := fs.ReadFile(staticFS, name)
 	if err != nil {
-		http.Error(w, name+" missing", http.StatusInternalServerError)
+		writeJSONError(w, http.StatusInternalServerError, "internal_error", name+" missing", false)
 		return
 	}
 	w.Header().Set("Content-Type", contentType)
