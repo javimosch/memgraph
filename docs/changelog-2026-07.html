@@ -27,6 +27,41 @@
 
     <div class="space-y-4">
       <div class="feature-card border-blue-500/30">
+        <span class="tag tag-fix">fix</span>
+        <span class="text-blue-400 text-xs ml-2 font-mono">v1.3.0</span>
+        <h3 class="text-white text-lg font-semibold mt-2">setup --sync-dir no longer overwrites global graph</h3>
+        <p class="text-slate-400 text-sm mt-1"><code>memgraph setup --sync-dir &lt;dir&gt;</code> now ADDS the directory to the auto-discovered dirs instead of replacing them. Previously, it would ingest only that dir into <code>~/.memgraph/skills-graph</code>, wiping the 212-skill global graph with just 1 skill.</p>
+      </div>
+
+      <div class="feature-card border-blue-500/30">
+        <span class="tag tag-feat">feat</span>
+        <span class="text-blue-400 text-xs ml-2 font-mono">v1.3.0</span>
+        <h3 class="text-white text-lg font-semibold mt-2">related command --limit flag</h3>
+        <p class="text-slate-400 text-sm mt-1"><code>memgraph related</code> now defaults to <code>--limit 10</code> (was unlimited, returning 55+ related skills). <code>count</code> field shows total, <code>related</code> field shows the limited list. Use <code>--limit 0</code> for all, <code>--limit N</code> for top N. Keeps agent output manageable.</p>
+      </div>
+
+      <div class="feature-card border-blue-500/30">
+        <span class="tag tag-fix">fix</span>
+        <span class="text-blue-400 text-xs ml-2 font-mono">v1.3.0</span>
+        <h3 class="text-white text-lg font-semibold mt-2">Tighter prefix matching</h3>
+        <p class="text-slate-400 text-sm mt-1">Prefix matching tightened to prevent false positives. <code>"rbm2"</code> no longer matches <code>"rbm21"</code> (different containers). Reverse prefix match (query longer than text word) now requires text word ≥ 5 chars. Fixed <code>"jar/rbm21/manage"</code> returning the wrong skill.</p>
+      </div>
+
+      <div class="feature-card border-blue-500/30">
+        <span class="tag tag-feat">feat</span>
+        <span class="text-blue-400 text-xs ml-2 font-mono">v1.3.0</span>
+        <h3 class="text-white text-lg font-semibold mt-2">All-words-match bonus + new stop words</h3>
+        <p class="text-slate-400 text-sm mt-1">Multi-word queries where every non-stopword matches a skill now get a +50 bonus. Helps concept queries like <code>"skill discovery"</code> match skills containing all words. <code>"skill"</code>, <code>"skills"</code>, <code>"agent"</code>, <code>"agents"</code> added to stop words — too common in this context.</p>
+      </div>
+
+      <div class="feature-card border-blue-500/30">
+        <span class="tag tag-fix">fix</span>
+        <span class="text-blue-400 text-xs ml-2 font-mono">v1.3.0</span>
+        <h3 class="text-white text-lg font-semibold mt-2">bridge JSON errors + graph boost cap</h3>
+        <p class="text-slate-400 text-sm mt-1"><code>memgraph bridge</code> with invalid/no agent now outputs JSON errors in <code>--json</code> mode (was plain text to stderr). Graph boost cap reduced from 50% to 30% — was still allowing highly-connected nodes to dominate in some cases.</p>
+      </div>
+
+      <div class="feature-card border-blue-500/30">
         <span class="tag tag-feat">feat</span>
         <span class="text-blue-400 text-xs ml-2 font-mono">v1.2.0</span>
         <h3 class="text-white text-lg font-semibold mt-2">Smart query word splitting</h3>
