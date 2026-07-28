@@ -28,6 +28,34 @@
     <div class="space-y-4">
       <div class="feature-card border-blue-500/30">
         <span class="tag tag-feat">feat</span>
+        <span class="text-blue-400 text-xs ml-2 font-mono">v1.2.0</span>
+        <h3 class="text-white text-lg font-semibold mt-2">Smart query word splitting</h3>
+        <p class="text-slate-400 text-sm mt-1">Queries are now split on camelCase, dots, slashes, underscores, and hyphens. <code>"a2aUseCase"</code> → <code>["a2a","use","case"]</code>, <code>"jar/rbm21/manage"</code> → <code>["jar","rbm21","manage"]</code>. All-caps words (JWT, API, SSL) kept whole, not split per-letter. Accents stripped from each word for accent-insensitive matching. Applied to all 3 scoring paths (recommend, query, serve /api/search).</p>
+      </div>
+
+      <div class="feature-card border-blue-500/30">
+        <span class="tag tag-fix">fix</span>
+        <span class="text-blue-400 text-xs ml-2 font-mono">v1.2.0</span>
+        <h3 class="text-white text-lg font-semibold mt-2">Graph boost capped at 50%</h3>
+        <p class="text-slate-400 text-sm mt-1">Highly-connected nodes (120+ edges) were dominating over better word matches. E.g. "jar mongo vault" returned jar-machin-vault-manage (120 edges) instead of jar-mongo-vault-manage (74 edges). Graph boost now capped at 50% of the node's own score, so word matches always dominate. Boost rate reduced from 5% to 2% per edge.</p>
+      </div>
+
+      <div class="feature-card border-blue-500/30">
+        <span class="tag tag-fix">fix</span>
+        <span class="text-blue-400 text-xs ml-2 font-mono">v1.2.0</span>
+        <h3 class="text-white text-lg font-semibold mt-2">graph-from-dir no longer overwrites global graph</h3>
+        <p class="text-slate-400 text-sm mt-1"><code>memgraph graph-from-dir &lt;dir&gt;</code> with a specific directory now writes to the project-local <code>.memgraph</code> instead of the global <code>~/.memgraph/skills-graph</code>. Only the no-arg form (auto-discover all 4 skill dirs) writes to the global graph. Use <code>--memory-dir</code> to override.</p>
+      </div>
+
+      <div class="feature-card border-blue-500/30">
+        <span class="tag tag-fix">fix</span>
+        <span class="text-blue-400 text-xs ml-2 font-mono">v1.2.0</span>
+        <h3 class="text-white text-lg font-semibold mt-2">API method validation + empty remember fix</h3>
+        <p class="text-slate-400 text-sm mt-1"><code>/api/sync</code> now rejects non-POST methods with 405 (was accepting DELETE, PUT, etc.). <code>memgraph remember ""</code> in <code>--json</code> mode now returns <code>invalid_argument</code> error JSON (was printing "Enter memory content" prompt to stderr).</p>
+      </div>
+
+      <div class="feature-card border-blue-500/30">
+        <span class="tag tag-feat">feat</span>
         <span class="text-blue-400 text-xs ml-2 font-mono">v1.1.0</span>
         <h3 class="text-white text-lg font-semibold mt-2">Skill Discovery Engine</h3>
         <p class="text-slate-400 text-sm mt-1">Three new commands for finding relevant skills: <code>memgraph recommend "&lt;task&gt;"</code> ranks skills by relevance to a task description, <code>memgraph query "&lt;keywords&gt;"</code> searches by keyword, <code>memgraph related "&lt;skill&gt;"</code> gets connected skills. Scoring uses IDF weighting, accent folding, project name boost, extended content matching, graph-based relatedness, stop words, and stemming. 212 skills from 4 directories.</p>
