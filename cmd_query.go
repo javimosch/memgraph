@@ -108,7 +108,22 @@ func nodeToRelatedNode(node Memory, relation string) RelatedNode {
 	}
 }
 
+// relationPriority ranks relation types — lower = more relevant.
+var relationPriority = map[string]int{
+	"similar":       0,
+	"shared-keyword": 1,
+	"references":    2,
+	"namespace":     3,
+}
+
 func getRelatedForNode(nodeID string, relatedMap map[string][]GraphEdge, lookup map[string]Memory) []RelatedNode {
+	return getRelatedForNodeLimit(nodeID, relatedMap, lookup, 0)
+}
+
+// getRelatedForNodeLimit returns at most maxRelated related nodes (0 = no limit).
+// Namespace nodes and sub-file references are filtered out — agents only need
+// real skill nodes. Results are sorted by relation priority (similar first).
+func getRelatedForNodeLimit(nodeID string, relatedMap map[string][]GraphEdge, lookup map[string]Memory, maxRelated int) []RelatedNode {
 	edges := relatedMap[nodeID]
 	seen := make(map[string]bool)
 	var related []RelatedNode
@@ -121,9 +136,33 @@ func getRelatedForNode(nodeID string, relatedMap map[string][]GraphEdge, lookup 
 			continue
 		}
 		seen[otherID] = true
-		if n, ok := lookup[otherID]; ok {
-			related = append(related, nodeToRelatedNode(n, e.Relation))
+		n, ok := lookup[otherID]
+		if !ok {
+			continue
 		}
+		// Filter out namespace nodes — they're not real skills
+		if n.Type == "namespace" {
+			continue
+		}
+		// Filter out sub-file references (no SKILL.md, just .md files inside skill dirs)
+		if n.FilePath == "" {
+			continue
+		}
+		related = append(related, nodeToRelatedNode(n, e.Relation))
+	}
+	// Sort by relation priority (similar < shared-keyword < references < namespace)
+	sort.SliceStable(related, func(i, j int) bool {
+		pi, pj := 99, 99
+		if v, ok := relationPriority[related[i].Relation]; ok {
+			pi = v
+		}
+		if v, ok := relationPriority[related[j].Relation]; ok {
+			pj = v
+		}
+		return pi < pj
+	})
+	if maxRelated > 0 && len(related) > maxRelated {
+		related = related[:maxRelated]
 	}
 	return related
 }
@@ -153,21 +192,25 @@ func scoreNode(node Memory, query string, idf map[string]float64) float64 {
 	project := strings.ToLower(node.Project)
 
 	var score float64
-	// Exact name match
-	if name == q {
-		score += 100
-	}
-	// Name contains query
-	if strings.Contains(name, q) {
-		score += 50
-	}
-	// Description contains query
-	if strings.Contains(desc, q) {
-		score += 30
-	}
-	// Project contains query
-	if strings.Contains(project, q) {
-		score += 20
+	// Full-query substring matches only for queries >= 3 chars
+	// (prevents single chars like "x" matching "extract", "context", etc.)
+	if len(q) >= 3 {
+		// Exact name match
+		if name == q {
+			score += 100
+		}
+		// Name contains query
+		if strings.Contains(name, q) {
+			score += 50
+		}
+		// Description contains query
+		if strings.Contains(desc, q) {
+			score += 30
+		}
+		// Project contains query
+		if strings.Contains(project, q) {
+			score += 20
+		}
 	}
 	// Word-level matches (skip stop words, use word-boundary matching, IDF-weighted)
 	queryWords := strings.Fields(q)
@@ -419,7 +462,7 @@ func handleQuery(cfg *Config) {
 			FilePath:    r.node.FilePath,
 			Score:       r.score,
 			Tags:        r.node.Tags,
-			Related:     getRelatedForNode(r.node.ID, relatedMap, lookup),
+			Related:     getRelatedForNodeLimit(r.node.ID, relatedMap, lookup, 5),
 		}
 		items = append(items, item)
 	}
@@ -650,7 +693,7 @@ func handleRecommend(cfg *Config) {
 			FilePath:    r.node.FilePath,
 			Score:       r.score,
 			Tags:        r.node.Tags,
-			Related:     getRelatedForNode(r.node.ID, relatedMap, lookup),
+			Related:     getRelatedForNodeLimit(r.node.ID, relatedMap, lookup, 5),
 		}
 		items = append(items, item)
 	}
