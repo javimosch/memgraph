@@ -28,6 +28,13 @@
     <div class="space-y-4">
       <div class="feature-card border-blue-500/30">
         <span class="tag tag-fix">fix</span>
+        <span class="text-blue-400 text-xs ml-2 font-mono">v1.3.4</span>
+        <h3 class="text-white text-lg font-semibold mt-2">Serve API unknown endpoints return JSON 404</h3>
+        <p class="text-slate-400 text-sm mt-1">Unknown <code>/api/*</code> paths (e.g. <code>/api/unknown</code>) now return a JSON 404 error instead of Go's default plain-text <code>404 page not found</code>. Completes the <code>v1.3.2</code> "all serve API errors return JSON" contract — previously only known endpoints returned JSON errors, while unknown API paths leaked the default handler. Non-API paths (UI routes) still return plain-text 404.</p>
+      </div>
+
+      <div class="feature-card border-blue-500/30">
+        <span class="tag tag-fix">fix</span>
         <span class="text-blue-400 text-xs ml-2 font-mono">v1.3.3</span>
         <h3 class="text-white text-lg font-semibold mt-2">Serve API limit consistency + git stop word</h3>
         <p class="text-slate-400 text-sm mt-1">Serve API <code>/api/search</code> <code>limit=0</code> now returns all results (was returning 0 — missing <code>limit > 0</code> check before truncation). <code>limit=-1</code> also returns all. Now consistent with CLI. Added <code>"git"</code> to stop words — <code>"GitHub"</code> camelCase-splits to <code>"git"</code>+<code>"hub"</code>, and <code>"git"</code> was too common, causing GitHub queries to match generic git skills.</p>
