@@ -283,6 +283,12 @@ func handleServe(cfg *Config) {
 	mux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.FS(staticFS))))
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/" {
+			// Unknown /api/* paths return JSON 404 (consistent with all other
+			// API error responses). Non-API paths fall through to plain 404.
+			if strings.HasPrefix(r.URL.Path, "/api/") {
+				writeJSONError(w, http.StatusNotFound, "not_found", "Unknown API endpoint: "+r.URL.Path, false)
+				return
+			}
 			http.NotFound(w, r)
 			return
 		}
