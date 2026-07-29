@@ -291,6 +291,7 @@ func printHelp() {
 	fmt.Println("    recommend <task>  Get skill recommendations for a task description")
 	fmt.Println("    setup [--sync-dir <dir>]  Configure repo for agent skill discovery (AGENTS.md + bridges + skill)")
 	fmt.Println("    serve [--port <n>] [--sync-dir <dir>] [--auto-sync]  Start daemon with embedded graph explorer UI")
+	fmt.Println("    feedback \"<msg>\" [-kind bug|idea|praise|note] [-context \"...\"]  Report feedback (dual-write to app + relay)")
 	fmt.Println("    status            Show system status")
 	fmt.Println("    config            Show configuration and storage location")
 	fmt.Println("    bridge <agent>    Generate agent-specific integration")

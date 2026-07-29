@@ -119,6 +119,8 @@ func main() {
 		handleSetup(&cfg)
 	case "serve":
 		handleServe(&cfg)
+	case "feedback":
+		handleFeedback(&cfg)
 	default:
 		if jsonOutput {
 			errorResponse(85, "unknown_command", fmt.Sprintf("Unknown command: %s. Run 'memgraph --help' for available commands.", command), false)
