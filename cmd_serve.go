@@ -12,7 +12,6 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -410,74 +409,8 @@ func apiSearchHandlerV2(w http.ResponseWriter, r *http.Request, graph *GraphInde
 		}
 	}
 
-	relatedMap := buildRelatedMap(graph)
 	lookup := buildLookupMap(graph)
-	idf := computeIDF(graph, splitQueryWords(stripAccents(q)))
-
-	type scored struct {
-		node  Memory
-		score float64
-	}
-	var results []scored
-	for _, n := range graph.Nodes {
-		if n.Type == "namespace" {
-			continue
-		}
-		if n.FilePath != "" && isSubFileReference(n.FilePath, lookup) {
-			continue
-		}
-		s := scoreNode(n, q, idf)
-		if s > 0 {
-			results = append(results, scored{node: n, score: s})
-		}
-	}
-
-	// Graph boost (same as CLI)
-	scoreByID := make(map[string]float64, len(results))
-	for _, r := range results {
-		scoreByID[r.node.ID] = r.score
-	}
-	for i, r := range results {
-		edges := relatedMap[r.node.ID]
-		for _, e := range edges {
-			otherID := e.Target
-			if otherID == r.node.ID {
-				otherID = e.Source
-			}
-			if otherScore, ok := scoreByID[otherID]; ok {
-				results[i].score += otherScore * 0.02
-			}
-		}
-		// Cap graph boost at 30% of the node's own score
-		if results[i].score > r.score*1.3 {
-			results[i].score = r.score * 1.3
-		}
-	}
-
-	sort.Slice(results, func(i, j int) bool {
-		if results[i].score != results[j].score {
-			return results[i].score > results[j].score
-		}
-		return results[i].node.Name < results[j].node.Name
-	})
-
-	if limit > 0 && len(results) > limit {
-		results = results[:limit]
-	}
-
-	items := make([]QueryResultItem, 0, len(results))
-	for _, r := range results {
-		items = append(items, QueryResultItem{
-			ID:          r.node.ID,
-			Name:        r.node.Name,
-			Description: r.node.Description,
-			Project:     r.node.Project,
-			FilePath:    r.node.FilePath,
-			Score:       r.score,
-			Tags:        r.node.Tags,
-			Related:     getRelatedForNodeLimit(r.node.ID, relatedMap, lookup, 5),
-		})
-	}
+	items := rankNodes(graph, lookup, q, limit, true)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{

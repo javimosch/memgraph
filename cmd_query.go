@@ -667,6 +667,85 @@ func isSubFileReference(filePath string, lookup map[string]Memory) bool {
 	return false
 }
 
+// rankNodes scores all skill nodes for a query and returns sorted results.
+// If withGraphBoost is true, connected high-scoring nodes boost each other
+// (capped at 30% of the node's own score), matching `memgraph recommend` and
+// the /api/search V2 handler behavior. limit <= 0 means no limit.
+func rankNodes(graph *GraphIndex, lookup map[string]Memory, query string, limit int, withGraphBoost bool) []QueryResultItem {
+	relatedMap := buildRelatedMap(graph)
+	idf := computeIDF(graph, splitQueryWords(query))
+
+	type scored struct {
+		node  Memory
+		score float64
+	}
+	var results []scored
+	for _, n := range graph.Nodes {
+		if n.Type == "namespace" {
+			continue
+		}
+		// Filter out sub-file references (README.md, references/*.md, etc.)
+		if n.FilePath != "" && isSubFileReference(n.FilePath, lookup) {
+			continue
+		}
+		s := scoreNode(n, query, idf)
+		if s > 0 {
+			results = append(results, scored{node: n, score: s})
+		}
+	}
+
+	if withGraphBoost {
+		// Boost nodes that are connected to other high-scoring nodes
+		scoreByID := make(map[string]float64)
+		for _, r := range results {
+			scoreByID[r.node.ID] = r.score
+		}
+		for i, r := range results {
+			edges := relatedMap[r.node.ID]
+			for _, e := range edges {
+				otherID := e.Target
+				if otherID == r.node.ID {
+					otherID = e.Source
+				}
+				if otherScore, ok := scoreByID[otherID]; ok {
+					results[i].score += otherScore * 0.02
+				}
+			}
+			// Cap graph boost at 30% of the node's own score to prevent
+			// highly-connected nodes from dominating over better word matches
+			if results[i].score > r.score*1.3 {
+				results[i].score = r.score * 1.3
+			}
+		}
+	}
+
+	sort.Slice(results, func(i, j int) bool {
+		if results[i].score != results[j].score {
+			return results[i].score > results[j].score
+		}
+		return results[i].node.Name < results[j].node.Name
+	})
+
+	if limit > 0 && len(results) > limit {
+		results = results[:limit]
+	}
+
+	items := make([]QueryResultItem, 0, len(results))
+	for _, r := range results {
+		items = append(items, QueryResultItem{
+			ID:          r.node.ID,
+			Name:        r.node.Name,
+			Description: r.node.Description,
+			Project:     r.node.Project,
+			FilePath:    r.node.FilePath,
+			Score:       r.score,
+			Tags:        r.node.Tags,
+			Related:     getRelatedForNodeLimit(r.node.ID, relatedMap, lookup, 5),
+		})
+	}
+	return items
+}
+
 func handleQuery(cfg *Config) {
 	args := os.Args[2:]
 	var queryParts []string
@@ -712,53 +791,7 @@ func handleQuery(cfg *Config) {
 		os.Exit(92)
 	}
 
-	relatedMap := buildRelatedMap(graph)
-	idf := computeIDF(graph, splitQueryWords(query))
-
-	type scored struct {
-		node  Memory
-		score float64
-	}
-	var results []scored
-	for _, n := range graph.Nodes {
-		if n.Type == "namespace" {
-			continue
-		}
-		// Filter out sub-file references (README.md, references/*.md, etc.)
-		if n.FilePath != "" && isSubFileReference(n.FilePath, lookup) {
-			continue
-		}
-		s := scoreNode(n, query, idf)
-		if s > 0 {
-			results = append(results, scored{node: n, score: s})
-		}
-	}
-
-	sort.Slice(results, func(i, j int) bool {
-		if results[i].score != results[j].score {
-			return results[i].score > results[j].score
-		}
-		return results[i].node.Name < results[j].node.Name
-	})
-
-	if limit > 0 && len(results) > limit {
-		results = results[:limit]
-	}
-
-	var items []QueryResultItem
-	for _, r := range results {
-		item := QueryResultItem{
-			ID:          r.node.ID,
-			Name:        r.node.Name,
-			Description: r.node.Description,
-			Project:     r.node.Project,
-			FilePath:    r.node.FilePath,
-			Score:       r.score,
-			Tags:        r.node.Tags,
-			Related:     getRelatedForNodeLimit(r.node.ID, relatedMap, lookup, 5),
-		}
-		items = append(items, item)
-	}
+	items := rankNodes(graph, lookup, query, limit, false)
 
 	result := QueryResult{
 		Query:   query,
@@ -960,77 +993,7 @@ func handleRecommend(cfg *Config) {
 		os.Exit(92)
 	}
 
-	relatedMap := buildRelatedMap(graph)
-
-	// Score all skill nodes
-	idf := computeIDF(graph, splitQueryWords(task))
-	type scored struct {
-		node  Memory
-		score float64
-	}
-	var results []scored
-	for _, n := range graph.Nodes {
-		if n.Type == "namespace" {
-			continue
-		}
-		// Filter out sub-file references (README.md, references/*.md, etc.)
-		if n.FilePath != "" && isSubFileReference(n.FilePath, lookup) {
-			continue
-		}
-		s := scoreNode(n, task, idf)
-		if s > 0 {
-			results = append(results, scored{node: n, score: s})
-		}
-	}
-
-	// Boost nodes that are connected to other high-scoring nodes
-	scoreByID := make(map[string]float64)
-	for _, r := range results {
-		scoreByID[r.node.ID] = r.score
-	}
-	for i, r := range results {
-		edges := relatedMap[r.node.ID]
-		for _, e := range edges {
-			otherID := e.Target
-			if otherID == r.node.ID {
-				otherID = e.Source
-			}
-			if otherScore, ok := scoreByID[otherID]; ok {
-				results[i].score += otherScore * 0.02
-			}
-		}
-		// Cap graph boost at 30% of the node's own score to prevent
-		// highly-connected nodes from dominating over better word matches
-		if results[i].score > r.score*1.3 {
-			results[i].score = r.score * 1.3
-		}
-	}
-
-	sort.Slice(results, func(i, j int) bool {
-		if results[i].score != results[j].score {
-			return results[i].score > results[j].score
-		}
-		return results[i].node.Name < results[j].node.Name
-	})
-
-	if limit > 0 && len(results) > limit {
-		results = results[:limit]
-	}
-
-	var items []QueryResultItem
-	for _, r := range results {
-		item := QueryResultItem{
-			ID:          r.node.ID,
-			Name:        r.node.Name,
-			Description: r.node.Description,
-			Project:     r.node.Project,
-			FilePath:    r.node.FilePath,
-			Score:       r.score,
-			Tags:        r.node.Tags,
-			Related:     getRelatedForNodeLimit(r.node.ID, relatedMap, lookup, 5),
-		}
-		items = append(items, item)
-	}
+	items := rankNodes(graph, lookup, task, limit, true)
 
 	result := RecommendResult{
 		Task:        task,
