@@ -11,12 +11,13 @@ jobs:
   build-test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version: "1.22"
-          cache: true
+          # No cache: this module has no dependencies (no go.sum), so the
+          # setup-go cache step has nothing to key on and warns otherwise.
 
       - name: Build
         run: go build ./...
