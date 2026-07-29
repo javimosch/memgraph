@@ -1,8 +1,14 @@
 # memgraph-cli 🧠📊
 
+[![CI](https://github.com/javimosch/memgraph-cli/actions/workflows/ci.yml/badge.svg)](https://github.com/javimosch/memgraph-cli/actions/workflows/ci.yml)
+[![release](https://img.shields.io/github/v/release/javimosch/memgraph-cli?display_name=release)](https://github.com/javimosch/memgraph-cli/releases)
+[![license](https://img.shields.io/github/license/javimosch/memgraph-cli)](LICENSE)
+
 **Memgraph CLI** — Knowledge graph and memory system for AI coding agents.
 
 Features a phyllotaxis-spiral visual knowledge graph explorer, automatic skills folder synchronization, TF-IDF + semantic graph linking, and agent-agnostic memory persistence.
+
+> **Status:** dogfooded and under active development. 29 automated tests (graph build, query scoring, serve API JSON-error contract, end-to-end ingest) run with `-race` on every push; CI is green on `master`. Not yet 1.0 — the ranking weights and CLI flags may still change.
 
 ## Features
 
@@ -70,6 +76,12 @@ memgraph bridge claude-code
 memgraph bridge opencode
 memgraph bridge copilot
 ```
+
+## Maintainer
+
+Jarancibia — [@javimosch](https://github.com/javimosch) · [intrane.fr](https://intrane.fr)
+
+Issues and PRs welcome on [GitHub](https://github.com/javimosch/memgraph-cli).
 
 ## License
 
