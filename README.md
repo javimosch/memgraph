@@ -8,7 +8,7 @@
 
 Features a phyllotaxis-spiral visual knowledge graph explorer, automatic skills folder synchronization, TF-IDF + semantic graph linking, and agent-agnostic memory persistence.
 
-> **Status:** dogfooded and under active development. 29 automated tests (graph build, query scoring, serve API JSON-error contract, end-to-end ingest) run with `-race` on every push; CI is green on `master`. Not yet 1.0 — the ranking weights and CLI flags may still change.
+> **Status:** v1.4.0 — stable public API. 34 automated tests (graph build, query scoring, ranking order, serve API JSON-error contract, end-to-end ingest, memory write) run with `-race` on every push; CI is green on `master`. The CLI flags, JSON output shapes, and ranking weights are frozen as of v1.4.0.
 
 ## Features
 

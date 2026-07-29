@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -26,8 +27,16 @@ func handleRemember(cfg *Config) {
 			os.Exit(85)
 		}
 		fmt.Fprintf(os.Stderr, "Enter memory content (Ctrl-D to finish):\n")
-		errorResponse(110, "not_implemented", "Interactive input not yet implemented", false)
-		os.Exit(110)
+		data, err := io.ReadAll(os.Stdin)
+		if err != nil {
+			errorResponse(110, "io_error", fmt.Sprintf("Failed to read stdin: %v", err), false)
+			os.Exit(110)
+		}
+		content = strings.TrimSpace(string(data))
+		if content == "" {
+			errorResponse(85, "invalid_argument", "Content required for remember command (stdin was empty)", false)
+			os.Exit(85)
+		}
 	}
 
 	session := opts.Session
