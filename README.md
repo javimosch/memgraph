@@ -1,8 +1,8 @@
-# memgraph-cli 🧠📊
+# memgraph 🧠📊
 
-[![CI](https://github.com/javimosch/memgraph-cli/actions/workflows/ci.yml/badge.svg)](https://github.com/javimosch/memgraph-cli/actions/workflows/ci.yml)
-[![release](https://img.shields.io/github/v/release/javimosch/memgraph-cli?display_name=release)](https://github.com/javimosch/memgraph-cli/releases)
-[![license](https://img.shields.io/github/license/javimosch/memgraph-cli)](LICENSE)
+[![CI](https://github.com/javimosch/memgraph/actions/workflows/ci.yml/badge.svg)](https://github.com/javimosch/memgraph/actions/workflows/ci.yml)
+[![release](https://img.shields.io/github/v/release/javimosch/memgraph?display_name=release)](https://github.com/javimosch/memgraph/releases)
+[![license](https://img.shields.io/github/license/javimosch/memgraph)](LICENSE)
 
 **Memgraph CLI** — Knowledge graph and memory system for AI coding agents.
 
@@ -25,14 +25,14 @@ Features a phyllotaxis-spiral visual knowledge graph explorer, automatic skills 
 ### One-line install (Linux x86_64)
 
 ```bash
-curl -L https://github.com/javimosch/memgraph-cli/releases/latest/download/memgraph -o ~/.local/bin/memgraph && chmod +x ~/.local/bin/memgraph
+curl -L https://github.com/javimosch/memgraph/releases/latest/download/memgraph -o ~/.local/bin/memgraph && chmod +x ~/.local/bin/memgraph
 ```
 
 ### From Source
 
 ```bash
-git clone https://github.com/javimosch/memgraph-cli.git
-cd memgraph-cli
+git clone https://github.com/javimosch/memgraph.git
+cd memgraph
 go build -o memgraph .
 cp memgraph ~/.local/bin/
 ```
@@ -81,7 +81,7 @@ memgraph bridge copilot
 
 Jarancibia — [@javimosch](https://github.com/javimosch) · [intrane.fr](https://intrane.fr)
 
-Issues and PRs welcome on [GitHub](https://github.com/javimosch/memgraph-cli).
+Issues and PRs welcome on [GitHub](https://github.com/javimosch/memgraph).
 
 ## License
 

@@ -1,4 +1,4 @@
-# AGENTS.md — memgraph-cli
+# AGENTS.md — memgraph
 
 ## Build & Run
 ```bash

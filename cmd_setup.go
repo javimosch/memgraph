@@ -9,7 +9,7 @@ import (
 
 const agentsMDSnippet = `## Memgraph — Skill Discovery
 
-This project uses [memgraph-cli](https://github.com/javimosch/memgraph-cli) for skill and memory discovery.
+This project uses [memgraph](https://github.com/javimosch/memgraph) for skill and memory discovery.
 
 **Before starting a task**, run these commands to find relevant skills and context:
 
@@ -30,7 +30,7 @@ Always check ` + "`memgraph recommend`" + ` first — it ranks skills by relevan
 
 const devinSkillContent = `---
 title: memgraph-usage
-description: Use memgraph-cli to discover relevant skills before starting any task. Run 'memgraph recommend' to find skills ranked by relevance to your task.
+description: Use memgraph to discover relevant skills before starting any task. Run 'memgraph recommend' to find skills ranked by relevance to your task.
 keywords: [memgraph, skills, discovery, recommend, search, graph, memory]
 ---
 
