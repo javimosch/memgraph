@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 // TestScoreNode_ExactNameMatch verifies the highest-weight scoring path: an
@@ -342,5 +343,52 @@ func TestScanSkillFiles_DedupByRealpath(t *testing.T) {
 	// Each dir should find the skill once
 	if len(skills1) != 1 || len(skills2) != 1 {
 		t.Fatalf("expected 1 skill per dir, got %d and %d", len(skills1), len(skills2))
+	}
+}
+
+// TestDiffFileState_CreatedModifiedDeleted verifies that diffFileState correctly
+// detects created, modified, and deleted files between two scans.
+func TestDiffFileState_CreatedModifiedDeleted(t *testing.T) {
+	dir := t.TempDir()
+
+	// Create three files
+	p1 := filepath.Join(dir, "a.md")
+	p2 := filepath.Join(dir, "b.md")
+	p3 := filepath.Join(dir, "c.md")
+	os.WriteFile(p1, []byte("a"), 0644)
+	os.WriteFile(p2, []byte("b"), 0644)
+	os.WriteFile(p3, []byte("c"), 0644)
+
+	old := scanFileState([]string{dir})
+	if len(old.mtimes) != 3 {
+		t.Fatalf("expected 3 files, got %d", len(old.mtimes))
+	}
+
+	// Modify p1, delete p2, add p4
+	time.Sleep(10 * time.Millisecond) // ensure mtime changes
+	os.WriteFile(p1, []byte("a-modified"), 0644)
+	os.Remove(p2)
+	p4 := filepath.Join(dir, "d.md")
+	os.WriteFile(p4, []byte("d"), 0644)
+
+	new := scanFileState([]string{dir})
+	changes := diffFileState(old, new)
+
+	if len(changes) != 3 {
+		t.Fatalf("expected 3 changes, got %d: %+v", len(changes), changes)
+	}
+
+	actions := map[string]string{}
+	for _, c := range changes {
+		actions[c.Path] = c.Action
+	}
+	if actions[p1] != "modified" {
+		t.Errorf("p1 should be modified, got %s", actions[p1])
+	}
+	if actions[p2] != "deleted" {
+		t.Errorf("p2 should be deleted, got %s", actions[p2])
+	}
+	if actions[p4] != "created" {
+		t.Errorf("p4 should be created, got %s", actions[p4])
 	}
 }

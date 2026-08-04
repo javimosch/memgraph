@@ -410,7 +410,7 @@ func apiSearchHandlerV2(w http.ResponseWriter, r *http.Request, graph *GraphInde
 	}
 
 	lookup := buildLookupMap(graph)
-	items := rankNodes(graph, lookup, q, limit, true)
+	items := rankNodes(graph, lookup, q, limit, true, false)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{

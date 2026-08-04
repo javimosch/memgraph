@@ -24,6 +24,7 @@ type QueryResultItem struct {
 	Project     string   `json:"project"`
 	FilePath    string   `json:"file_path"`
 	Score       float64  `json:"score"`
+	Type        string   `json:"type,omitempty"`
 	Tags        []string `json:"tags"`
 	Related     []RelatedNode `json:"related,omitempty"`
 }
@@ -771,7 +772,7 @@ func isSubFileReference(filePath string, lookup map[string]Memory) bool {
 // If withGraphBoost is true, connected high-scoring nodes boost each other
 // (capped at 30% of the node's own score), matching `memgraph recommend` and
 // the /api/search V2 handler behavior. limit <= 0 means no limit.
-func rankNodes(graph *GraphIndex, lookup map[string]Memory, query string, limit int, withGraphBoost bool) []QueryResultItem {
+func rankNodes(graph *GraphIndex, lookup map[string]Memory, query string, limit int, withGraphBoost bool, includePlans bool) []QueryResultItem {
 	relatedMap := buildRelatedMap(graph)
 	idf := computeIDF(graph, splitQueryWords(query))
 
@@ -784,11 +785,20 @@ func rankNodes(graph *GraphIndex, lookup map[string]Memory, query string, limit 
 		if n.Type == "namespace" {
 			continue
 		}
+		// Filter plan nodes unless --include-plans is set
+		if n.Type == "plan" && !includePlans {
+			continue
+		}
+		// Apply a small penalty to plan nodes so skills rank higher
+		planPenalty := 1.0
+		if n.Type == "plan" {
+			planPenalty = 0.8
+		}
 		// Filter out sub-file references (README.md, references/*.md, etc.)
 		if n.FilePath != "" && isSubFileReference(n.FilePath, lookup) {
 			continue
 		}
-		s := scoreNode(n, query, idf)
+		s := scoreNode(n, query, idf) * planPenalty
 		if s > 0 {
 			results = append(results, scored{node: n, score: s})
 		}
@@ -839,6 +849,7 @@ func rankNodes(graph *GraphIndex, lookup map[string]Memory, query string, limit 
 			Project:     r.node.Project,
 			FilePath:    r.node.FilePath,
 			Score:       r.score,
+			Type:        r.node.Type,
 			Tags:        r.node.Tags,
 			Related:     getRelatedForNodeLimit(r.node.ID, relatedMap, lookup, 5),
 		})
@@ -891,7 +902,7 @@ func handleQuery(cfg *Config) {
 		os.Exit(92)
 	}
 
-	items := rankNodes(graph, lookup, query, limit, false)
+	items := rankNodes(graph, lookup, query, limit, false, false)
 
 	result := QueryResult{
 		Query:   query,
@@ -1052,6 +1063,7 @@ func handleRecommend(cfg *Config) {
 	args := os.Args[2:]
 	var taskParts []string
 	var limit int = 5
+	includePlans := false
 
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
@@ -1062,6 +1074,8 @@ func handleRecommend(cfg *Config) {
 			}
 		case "--json", "-j":
 			jsonOutput = true
+		case "--include-plans":
+			includePlans = true
 		case "--memory-dir":
 			if i+1 < len(args) {
 				i++
@@ -1093,7 +1107,7 @@ func handleRecommend(cfg *Config) {
 		os.Exit(92)
 	}
 
-	items := rankNodes(graph, lookup, task, limit, true)
+	items := rankNodes(graph, lookup, task, limit, true, includePlans)
 
 	result := RecommendResult{
 		Task:        task,

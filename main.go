@@ -119,6 +119,10 @@ func main() {
 		handleSetup(&cfg)
 	case "serve":
 		handleServe(&cfg)
+	case "watch":
+		handleWatch(&cfg)
+	case "plans":
+		handlePlansList(&cfg)
 	case "feedback":
 		handleFeedback(&cfg)
 	default:

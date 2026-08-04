@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"strconv"
 	"strings"
 )
@@ -24,6 +25,8 @@ type CommandOptions struct {
 	SessionSet  bool
 	SyncDir     string
 	AutoSync    bool
+	PollInterval int
+	IncludePlans bool
 }
 
 func parseCommandArgs(args []string) ([]string, CommandOptions) {
@@ -143,6 +146,18 @@ func parseCommandArgs(args []string) ([]string, CommandOptions) {
 			continue
 		case arg == "--auto-sync":
 			opts.AutoSync = true
+			continue
+		case arg == "--poll-interval":
+			if i+1 < len(args) && !strings.HasPrefix(args[i+1], "--") {
+				fmt.Sscanf(args[i+1], "%d", &opts.PollInterval)
+				i++
+			}
+			continue
+		case strings.HasPrefix(arg, "--poll-interval="):
+			fmt.Sscanf(strings.TrimPrefix(arg, "--poll-interval="), "%d", &opts.PollInterval)
+			continue
+		case arg == "--include-plans":
+			opts.IncludePlans = true
 			continue
 		case arg == "--tag-only":
 			opts.TagOnly = true

@@ -144,7 +144,7 @@ func TestGoldenCorpus_RankingOrder(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			items := rankNodes(graph, lookup, tc.query, tc.limit, tc.withGraphBoost)
+			items := rankNodes(graph, lookup, tc.query, tc.limit, tc.withGraphBoost, false)
 			if len(items) == 0 {
 				t.Fatalf("query %q returned 0 results, expected at least 1", tc.query)
 			}
@@ -170,7 +170,7 @@ func TestGoldenCorpus_RankingOrder(t *testing.T) {
 // returns an empty result set, not nil-dereference or error.
 func TestGoldenCorpus_NoMatchReturnsEmpty(t *testing.T) {
 	graph, lookup := goldenCorpus(t)
-	items := rankNodes(graph, lookup, "zzznomatchxyz", 10, false)
+	items := rankNodes(graph, lookup, "zzznomatchxyz", 10, false, false)
 	if len(items) != 0 {
 		t.Fatalf("expected 0 results for non-matching query, got %d: %s", len(items), itemIDs(items))
 	}
@@ -180,7 +180,7 @@ func TestGoldenCorpus_NoMatchReturnsEmpty(t *testing.T) {
 // never returned in ranking results.
 func TestGoldenCorpus_NamespaceNodesFiltered(t *testing.T) {
 	graph, lookup := goldenCorpus(t)
-	items := rankNodes(graph, lookup, "memory", 100, false)
+	items := rankNodes(graph, lookup, "memory", 100, false, false)
 	for _, item := range items {
 		if item.ID == "namespace_memory" || item.ID == "namespace_jwt" ||
 			item.ID == "namespace_docker" || item.ID == "namespace_log" {

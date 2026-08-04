@@ -16,7 +16,9 @@ Features a phyllotaxis-spiral visual knowledge graph explorer, automatic skills 
 - **Agent-First CLI**: `memgraph query`, `memgraph related`, `memgraph recommend` — search the graph and get skill recommendations for any task, with JSON output for agent consumption.
 - **Copy Visible Paths**: Filter skills (e.g. search "rbm20"), hit `ENTER`, then copy all visible file paths to share directly with your agent.
 - **Auto-Sync**: `--sync-dir` monitors any directory and updates the knowledge graph in real-time. Comma-separated multiple directories supported.
+- **Watch Mode**: `memgraph watch` monitors skill directories and auto-rebuilds the graph on file changes — no more stale graphs. Polls every 4 seconds by default.
 - **Graph-From-Dir**: Ingest any directory of `SKILL.md` or `.md` files into a relational knowledge graph (`references`, `similar`, `shared-keyword`).
+- **Planning-with-Files Integration**: Index `task_plan.md`, `findings.md`, and `progress.md` from [planning-with-files](https://github.com/OthmanAdi/planning-with-files) as graph nodes. `memgraph recommend --include-plans` returns relevant past plans alongside skills — cross-session memory for "last time you did this, here's what you tried."
 - **Centralized Storage**: All memories stored in `~/.memgraph/` with git-based project scoping.
 - **Agent Integration**: Works seamlessly with Claude Code, OpenCode, Copilot, and SuperCLI.
 
@@ -75,6 +77,38 @@ Generate bridge configs for your AI agents:
 memgraph bridge claude-code
 memgraph bridge opencode
 memgraph bridge copilot
+```
+
+### 4. Planning-with-Files Integration
+
+[planning-with-files](https://github.com/OthmanAdi/planning-with-files) (26k stars) keeps `task_plan.md`, `findings.md`, and `progress.md` on disk so agent work survives context loss. memgraph can index these files as cross-session memory:
+
+```bash
+# Index skills + planning files together
+memgraph graph-from-dir --include-plans
+
+# Get recommendations that include past plans
+memgraph recommend "fix websocket vulnerability" --include-plans
+
+# List all indexed plans
+memgraph plans
+```
+
+When you ask "fix websocket vulnerability", memgraph returns not just the `audit-website` skill but also any past `task_plan.md` from a similar task — what you tried, what worked, what failed. This turns planning-with-files from a single-session tool into a cross-session memory.
+
+### 5. Watch Mode
+
+Keep the graph always fresh without manual rebuilds:
+
+```bash
+# Watch standard skill directories (auto-discovers ~/.agents/skills, etc.)
+memgraph watch
+
+# Watch custom directories with a custom poll interval
+memgraph watch --sync-dir ~/my-skills --poll-interval 2
+
+# JSON output for daemon mode
+memgraph watch --json
 ```
 
 ## Maintainer

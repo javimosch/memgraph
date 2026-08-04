@@ -422,17 +422,27 @@ func handleGraphFromDir(cfg *Config) {
 			errorResponse(92, "resource_error", err.Error(), false)
 			os.Exit(92)
 		}
+
+		planCount := 0
+		if opts.IncludePlans {
+			planCount = ingestPlans(targetDir, cfg)
+		}
+
 		if jsonOutput {
 			json.NewEncoder(os.Stdout).Encode(map[string]interface{}{
 				"sources":     dirs,
 				"target":      targetDir,
 				"skills":      skillCount,
 				"namespaces":  namespaceCount,
+				"plans":       planCount,
 				"nodes":       len(graph.Nodes),
 				"edges":       len(graph.Edges),
 			})
 		} else {
 			fmt.Printf("Ingested %d skills from %d directories into %s\n", skillCount, len(dirs), targetDir)
+			if planCount > 0 {
+				fmt.Printf("Plans: %d (from planning-with-files)\n", planCount)
+			}
 			fmt.Printf("Namespaces: %d, Total nodes: %d, Edges: %d\n", namespaceCount, len(graph.Nodes), len(graph.Edges))
 		}
 		return
@@ -458,12 +468,18 @@ func handleGraphFromDir(cfg *Config) {
 		os.Exit(92)
 	}
 
+	planCount := 0
+	if opts.IncludePlans {
+		planCount = ingestPlans(targetDir, cfg, sourceDir)
+	}
+
 	if jsonOutput {
 		json.NewEncoder(os.Stdout).Encode(map[string]interface{}{
 			"source":     sourceDir,
 			"target":     targetDir,
 			"skills":     skillCount,
 			"namespaces": namespaceCount,
+			"plans":      planCount,
 			"nodes":      len(graph.Nodes),
 			"edges":      len(graph.Edges),
 		})
