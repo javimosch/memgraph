@@ -10,6 +10,47 @@ Features a phyllotaxis-spiral visual knowledge graph explorer, automatic skills 
 
 > **Status:** v1.4.0 — stable public API. 34 automated tests (graph build, query scoring, ranking order, serve API JSON-error contract, end-to-end ingest, memory write) run with `-race` on every push; CI is green on `master`. The CLI flags, JSON output shapes, and ranking weights are frozen as of v1.4.0.
 
+## Integrations
+
+### [planning-with-files](https://github.com/OthmanAdi/planning-with-files) — cross-session memory for your plans
+
+[![planning-with-files](https://img.shields.io/github/stars/OthmanAdi/planning-with-files?style=flat&label=planning-with-files&color=yellow)](https://github.com/OthmanAdi/planning-with-files)
+
+[planning-with-files](https://github.com/OthmanAdi/planning-with-files) (26k stars) keeps `task_plan.md`, `findings.md`, and `progress.md` on disk so agent work survives context loss, `/clear`, and crashes. memgraph indexes those files as graph nodes — turning single-session plans into **cross-session memory**.
+
+**Separately:**
+- planning-with-files → your plan survives `/clear` within a session
+- memgraph → you find the right skill before starting work
+
+**Together:**
+- memgraph → "last time you fixed a websocket bug, you used `audit-website` and here's what your `task_plan.md` said worked and what failed"
+
+```
+┌─────────────────────┐     ┌─────────────────────┐
+│ planning-with-files │     │      memgraph       │
+│                     │     │                     │
+│  task_plan.md       │────▶│  type: "plan" node  │
+│  findings.md        │────▶│  in knowledge graph │
+│  progress.md        │────▶│                     │
+│                     │     │  recommend --include-plans
+│  survives /clear    │     │  returns skills +   │
+│  within a session   │     │  past plans together │
+└─────────────────────┘     └─────────────────────┘
+         ▲                           │
+         │    "what did I try        │
+         └────last time?─────────────┘
+```
+
+```bash
+# Index your skills + planning files
+memgraph graph-from-dir --include-plans
+
+# Ask for recommendations — get skills AND past plans
+memgraph recommend "fix websocket vulnerability" --include-plans
+```
+
+memgraph also discovers plans from **any** framework — `TODO.md`, `PLAN.md`, `ROADMAP.md`, `docs/plans/*.md`, or auto-detected by structure. See [Plan File Discovery](#4-plan-file-discovery) below.
+
 ## Features
 
 - **Galaxy Visualization**: Interactive Via Lactea star map (`memgraph serve`) — spiral arm layout, draggable stars, search, edge toggles.
