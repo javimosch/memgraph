@@ -18,7 +18,7 @@ Features a phyllotaxis-spiral visual knowledge graph explorer, automatic skills 
 - **Auto-Sync**: `--sync-dir` monitors any directory and updates the knowledge graph in real-time. Comma-separated multiple directories supported.
 - **Watch Mode**: `memgraph watch` monitors skill directories and auto-rebuilds the graph on file changes — no more stale graphs. Polls every 4 seconds by default.
 - **Graph-From-Dir**: Ingest any directory of `SKILL.md` or `.md` files into a relational knowledge graph (`references`, `similar`, `shared-keyword`).
-- **Planning-with-Files Integration**: Index `task_plan.md`, `findings.md`, and `progress.md` from [planning-with-files](https://github.com/OthmanAdi/planning-with-files) as graph nodes. `memgraph recommend --include-plans` returns relevant past plans alongside skills — cross-session memory for "last time you did this, here's what you tried."
+- **Plan File Discovery**: Index task plans, TODOs, and roadmaps from any planning framework — not just [planning-with-files](https://github.com/OthmanAdi/planning-with-files). Built-in patterns cover `task_plan.md`, `TODO.md`, `PLAN.md`, `ROADMAP.md`, `docs/plan/*.md`, `docs/plans/*.md`. Auto-detect heuristic catches any `.md` file with phase/checkbox structure. Custom patterns via `~/.memgraph/plan-patterns.json`. `memgraph recommend --include-plans` returns relevant past plans alongside skills.
 - **Centralized Storage**: All memories stored in `~/.memgraph/` with git-based project scoping.
 - **Agent Integration**: Works seamlessly with Claude Code, OpenCode, Copilot, and SuperCLI.
 
@@ -79,12 +79,38 @@ memgraph bridge opencode
 memgraph bridge copilot
 ```
 
-### 4. Planning-with-Files Integration
+### 4. Plan File Discovery
 
-[planning-with-files](https://github.com/OthmanAdi/planning-with-files) (26k stars) keeps `task_plan.md`, `findings.md`, and `progress.md` on disk so agent work survives context loss. memgraph can index these files as cross-session memory:
+memgraph indexes task plans, TODOs, and roadmaps from any planning framework — not just [planning-with-files](https://github.com/OthmanAdi/planning-with-files). Three discovery layers:
+
+**Built-in patterns** (no config needed):
+
+| Pattern | Trigger file | Content files | Framework |
+|---|---|---|---|
+| planning-with-files | `task_plan.md` | `findings.md`, `progress.md` | [OthmanAdi/planning-with-files](https://github.com/OthmanAdi/planning-with-files) |
+| todo-md | `TODO.md` | — | Common convention |
+| plan-md | `PLAN.md` | — | Common convention |
+| roadmap-md | `ROADMAP.md` | — | Common convention |
+| docs-plan | `docs/plan/*.md` | — | Repo-specific |
+| docs-plans | `docs/plans/*.md` | — | Repo-specific |
+
+**Auto-detect heuristic**: any `.md` file with phase headings (`## Phase`, `## Step`, `## Sprint`, `## Milestone`) AND checkboxes (`- [ ]`, `- [x]`) is scored as a potential plan. Threshold of 4+ avoids false positives on regular documentation.
+
+**Custom patterns** via `~/.memgraph/plan-patterns.json`:
+
+```json
+[
+  {
+    "name": "my-sprints",
+    "trigger": "SPRINT.md",
+    "content_files": ["NOTES.md"],
+    "subdirs": ""
+  }
+]
+```
 
 ```bash
-# Index skills + planning files together
+# Index skills + plan files together
 memgraph graph-from-dir --include-plans
 
 # Get recommendations that include past plans
@@ -94,7 +120,7 @@ memgraph recommend "fix websocket vulnerability" --include-plans
 memgraph plans
 ```
 
-When you ask "fix websocket vulnerability", memgraph returns not just the `audit-website` skill but also any past `task_plan.md` from a similar task — what you tried, what worked, what failed. This turns planning-with-files from a single-session tool into a cross-session memory.
+When you ask "fix websocket vulnerability", memgraph returns not just the `audit-website` skill but also any past plan from a similar task — what you tried, what worked, what failed. This turns any planning framework into cross-session memory.
 
 ### 5. Watch Mode
 

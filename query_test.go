@@ -392,3 +392,61 @@ func TestDiffFileState_CreatedModifiedDeleted(t *testing.T) {
 		t.Errorf("p4 should be created, got %s", actions[p4])
 	}
 }
+
+// TestScorePlanLikelihood verifies the auto-detect heuristic scoring.
+func TestScorePlanLikelihood(t *testing.T) {
+	tests := []struct {
+		name     string
+		text     string
+		minScore int
+	}{
+		{
+			name: "phases + checkboxes",
+			text: "# Sprint 14\n## Phase 1: Frontend\n- [x] Update layout\n- [ ] Fix sidebar",
+			minScore: 4,
+		},
+		{
+			name: "checkboxes only",
+			text: "# TODO\n- [ ] Task A\n- [x] Task B",
+			minScore: 2,
+		},
+		{
+			name: "phases only",
+			text: "# Plan\n## Phase 1: Setup\n## Phase 2: Build",
+			minScore: 2,
+		},
+		{
+			name: "plain doc (no signals)",
+			text: "# Meeting Notes\nWe discussed the timeline today.\nThe client wants delivery by March.",
+			minScore: 0,
+		},
+		{
+			name: "plan word + checkboxes",
+			text: "# Task Plan\n- [ ] Do thing A\n- [x] Do thing B",
+			minScore: 3,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			score := scorePlanLikelihood(tc.text)
+			if score < tc.minScore {
+				t.Errorf("scorePlanLikelihood(%q) = %d, want >= %d", tc.name, score, tc.minScore)
+			}
+		})
+	}
+}
+
+// TestBuiltinPlanPatterns verifies built-in patterns cover known frameworks.
+func TestBuiltinPlanPatterns(t *testing.T) {
+	patterns := builtinPlanPatterns()
+	names := make(map[string]bool)
+	for _, p := range patterns {
+		names[p.Name] = true
+	}
+	expected := []string{"planning-with-files", "todo-md", "plan-md", "roadmap-md", "docs-plan", "docs-plans"}
+	for _, e := range expected {
+		if !names[e] {
+			t.Errorf("missing builtin pattern: %s", e)
+		}
+	}
+}
