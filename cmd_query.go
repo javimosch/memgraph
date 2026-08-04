@@ -51,53 +51,65 @@ type RecommendResult struct {
 }
 
 func loadGraphForQuery(cfg *Config) (*GraphIndex, map[string]Memory, error) {
-	var candidates []string
+	// Collect all candidate graph.json paths with their modification time,
+	// then load the NEWEST one. This prevents stale skills-graph from
+	// shadowing a freshly-built project-specific graph (issue #1).
+	type candidate struct {
+		path  string
+		mtime int64
+	}
+	var candidates []candidate
 
-	// If memoryDir was explicitly set via --memory-dir, try it FIRST
-	// (before the global graph) so the user's override is respected.
-	if memoryDir != "" {
-		candidates = append(candidates, memoryDir)
+	addCandidate := func(dir string) {
+		graphFile := filepath.Join(dir, "graph.json")
+		if info, err := os.Stat(graphFile); err == nil {
+			candidates = append(candidates, candidate{path: dir, mtime: info.ModTime().Unix()})
+		}
 	}
 
-	// Prefer the global ~/.memgraph/skills-graph path (the canonical skill graph)
-	// over project-specific memory dirs, which may have stale graphs.
+	// If memoryDir was explicitly set via --memory-dir, include it
+	if memoryDir != "" {
+		addCandidate(memoryDir)
+	}
+
+	// Global skills-graph paths (canonical skill graph)
 	if home, err := os.UserHomeDir(); err == nil {
-		candidates = append(candidates,
-			filepath.Join(home, ".memgraph", "skills-graph"),
-			filepath.Join(home, ".sick-memory", "skills-graph"),
-		)
+		addCandidate(filepath.Join(home, ".memgraph", "skills-graph"))
+		addCandidate(filepath.Join(home, ".sick-memory", "skills-graph"))
 		// Also scan ~/.memgraph/*/graph.json for any graph dirs
 		globalDir := filepath.Join(home, ".memgraph")
 		if entries, err := os.ReadDir(globalDir); err == nil {
 			for _, e := range entries {
 				if e.IsDir() && e.Name() != "skills-graph" {
-					candidates = append(candidates, filepath.Join(globalDir, e.Name()))
+					addCandidate(filepath.Join(globalDir, e.Name()))
 				}
 			}
 		}
 	}
 
-	// Add the configured memory dir as a fallback (if not already added)
+	// Configured memory dir as fallback
 	if memoryDir == "" {
-		candidates = append(candidates, cfg.MemoryDir)
+		addCandidate(cfg.MemoryDir)
 	}
 
-	for _, path := range candidates {
-		graphFile := filepath.Join(path, "graph.json")
-		if _, err := os.Stat(graphFile); err == nil {
-			graph, err := loadGraphIndex(path)
-			if err != nil {
-				return nil, nil, fmt.Errorf("failed to load graph from %s: %w", path, err)
-			}
-			lookup := make(map[string]Memory, len(graph.Nodes))
-			for _, n := range graph.Nodes {
-				lookup[n.ID] = n
-			}
-			return graph, lookup, nil
-		}
+	if len(candidates) == 0 {
+		return nil, nil, fmt.Errorf("no graph found — run 'memgraph serve --sync-dir <dir>' or 'memgraph graph-from-dir <dir>' first")
 	}
 
-	return nil, nil, fmt.Errorf("no graph found — run 'memgraph serve --sync-dir <dir>' or 'memgraph graph-from-dir <dir>' first")
+	// Sort by mtime descending — newest graph wins
+	sort.Slice(candidates, func(i, j int) bool {
+		return candidates[i].mtime > candidates[j].mtime
+	})
+
+	graph, err := loadGraphIndex(candidates[0].path)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to load graph from %s: %w", candidates[0].path, err)
+	}
+	lookup := make(map[string]Memory, len(graph.Nodes))
+	for _, n := range graph.Nodes {
+		lookup[n.ID] = n
+	}
+	return graph, lookup, nil
 }
 
 func buildRelatedMap(graph *GraphIndex) map[string][]GraphEdge {
@@ -213,6 +225,14 @@ var queryStopWords = map[string]bool{
 	"error": true, "wrong": true, "broken": true, "fail": true,
 	"skill": true, "skills": true, "agent": true, "agents": true,
 	"git": true, // "git" is too common (many skills mention git); "GitHub" splits to "git"+"hub"
+	// Generic action verbs that appear in many skill names but don't discriminate.
+	// These get no word-level name-match bonus (+30*IDF) — they inflate scores
+	// for skills that happen to have the verb in their name (issue #1).
+	"generate": true, "configure": true, "deploy": true, "install": true,
+	"manage": true, "management": true, "build": true, "run": true,
+	"update": true, "delete": true, "remove": true, "check": true,
+	"start": true, "stop": true, "monitor": true, "scan": true,
+	"export": true, "import": true, "sync": true, "publish": true,
 }
 
 func scoreNode(node Memory, query string, idf map[string]float64) float64 {
@@ -435,18 +455,47 @@ func containsWord(text, word string) bool {
 	if hasWordBoundary(text, word) {
 		return true
 	}
-	// Simple stemming: strip trailing "s" (plural → singular)
+	// Simple stemming: strip trailing suffixes to match word variants.
+	// "tracking" → "track", "trackers" → "tracker" → "track",
+	// "tracker" → "track", "deploying" → "deploy"
+	stems := make([]string, 0, 3)
 	if strings.HasSuffix(word, "s") && len(word) > 3 {
-		singular := word[:len(word)-1]
-		if hasWordBoundary(text, singular) {
+		stems = append(stems, word[:len(word)-1])
+	}
+	if strings.HasSuffix(word, "ing") && len(word) > 4 {
+		stems = append(stems, word[:len(word)-3])
+	}
+	if strings.HasSuffix(word, "ers") && len(word) > 4 {
+		stems = append(stems, word[:len(word)-3])
+	}
+	if strings.HasSuffix(word, "er") && len(word) > 4 {
+		stems = append(stems, word[:len(word)-2])
+	}
+	if strings.HasSuffix(word, "ed") && len(word) > 4 {
+		stems = append(stems, word[:len(word)-2])
+	}
+	for _, stem := range stems {
+		if hasWordBoundary(text, stem) {
 			return true
 		}
 	}
-	// Simple stemming: strip trailing "ing"
-	if strings.HasSuffix(word, "ing") && len(word) > 4 {
-		base := word[:len(word)-3]
-		if hasWordBoundary(text, base) {
-			return true
+	// Also stem the TEXT side: split text into words, stem each, and compare
+	// to the query word and its stems. This catches "tracking" matching
+	// "tracker" (both stem to "track") which the one-sided stem above misses.
+	if len(stems) > 0 || len(word) >= 4 {
+		words := strings.FieldsFunc(text, func(c rune) bool {
+			return c == ' ' || c == '-' || c == '_' || c == '.' || c == ',' || c == '/' || c == '(' || c == ')'
+		})
+		allStems := append([]string{word}, stems...)
+		for _, w := range words {
+			wStems := wordStems(w)
+			for _, ws := range wStems {
+				for _, qs := range allStems {
+					if ws == qs && len(ws) >= 4 {
+						return true
+					}
+				}
+			}
 		}
 	}
 	// Prefix match for 4+ char words: "mongo" matches "mongodb", "mongodb" matches "mongo"
@@ -473,6 +522,29 @@ func containsWord(text, word string) bool {
 	}
 	// For 3-char words, use exact match only (handled by hasWordBoundary above)
 	return false
+}
+
+// wordStems returns the base form(s) of a word by stripping common suffixes.
+// "tracker" → ["track"], "tracking" → ["track"], "backups" → ["backup"],
+// "deployed" → ["deploy"], "trackers" → ["tracker", "track"]
+func wordStems(word string) []string {
+	stems := []string{word}
+	if strings.HasSuffix(word, "ers") && len(word) > 4 {
+		stems = append(stems, word[:len(word)-3])
+	}
+	if strings.HasSuffix(word, "er") && len(word) > 4 {
+		stems = append(stems, word[:len(word)-2])
+	}
+	if strings.HasSuffix(word, "ing") && len(word) > 4 {
+		stems = append(stems, word[:len(word)-3])
+	}
+	if strings.HasSuffix(word, "ed") && len(word) > 4 {
+		stems = append(stems, word[:len(word)-2])
+	}
+	if strings.HasSuffix(word, "s") && len(word) > 3 {
+		stems = append(stems, word[:len(word)-1])
+	}
+	return stems
 }
 
 func hasWordBoundary(text, word string) bool {

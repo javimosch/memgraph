@@ -132,3 +132,122 @@ func TestBuildRelatedMap_Bidirectional(t *testing.T) {
 		t.Fatalf("expected 1 related edge for b (reverse), got %d", len(rm["b"]))
 	}
 }
+
+// --- Issue #1 tests: stale graph, stemming, stop words ---
+
+// TestContainsWord_BidirectionalStemming_TrackingMatchesTracker verifies that
+// "tracking" (query word) matches "tracker" (text) via bidirectional stemming.
+// Both stem to "track". This was the root cause of beads-tracker ranking below
+// jar-portafolio-track for "local issue tracking" (issue #1).
+func TestContainsWord_BidirectionalStemming_TrackingMatchesTracker(t *testing.T) {
+	if !containsWord("beads-tracker", "tracking") {
+		t.Fatal("containsWord('beads-tracker', 'tracking') should be true via bidirectional stemming")
+	}
+	if !containsWord("jar-portafolio-track", "tracking") {
+		t.Fatal("containsWord('jar-portafolio-track', 'tracking') should be true via ing→stem")
+	}
+}
+
+// TestContainsWord_BidirectionalStemming_ErSuffix verifies that "tracker" in
+// text matches "track" query word via er-suffix stem on the text side.
+func TestContainsWord_BidirectionalStemming_ErSuffix(t *testing.T) {
+	if !containsWord("beads-tracker", "track") {
+		t.Fatal("containsWord('beads-tracker', 'track') should be true via er-stem on text side")
+	}
+}
+
+// TestContainsWord_NoFalsePositiveStemming verifies that short stems don't
+// cause false positives. "er" stripping is only for words > 4 chars.
+func TestContainsWord_NoFalsePositiveStemming(t *testing.T) {
+	if containsWord("the", "there") {
+		t.Fatal("containsWord('the', 'there') should be false — 'the' is too short for er-stem")
+	}
+}
+
+// TestWordStems_Tracker verifies wordStems returns the base form.
+func TestWordStems_Tracker(t *testing.T) {
+	stems := wordStems("tracker")
+	found := false
+	for _, s := range stems {
+		if s == "track" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("wordStems('tracker') should include 'track', got %v", stems)
+	}
+}
+
+// TestWordStems_Tracking verifies wordStems strips ing suffix.
+func TestWordStems_Tracking(t *testing.T) {
+	stems := wordStems("tracking")
+	found := false
+	for _, s := range stems {
+		if s == "track" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("wordStems('tracking') should include 'track', got %v", stems)
+	}
+}
+
+// TestQueryStopWords_GenericActionVerbs verifies that generic action verbs
+// are stop words so they don't inflate name-match scores (issue #1 P2).
+func TestQueryStopWords_GenericActionVerbs(t *testing.T) {
+	verbs := []string{"generate", "configure", "deploy", "install", "manage",
+		"build", "run", "update", "delete", "remove", "check", "start", "stop",
+		"monitor", "scan", "export", "import", "sync", "publish"}
+	for _, v := range verbs {
+		if !queryStopWords[v] {
+			t.Fatalf("expected %q to be a stop word (generic action verb)", v)
+		}
+	}
+}
+
+// TestScoreNode_StopWordDoesNotScore verifies that a stop word like "generate"
+// does not contribute to the score even if it appears in the skill name.
+func TestScoreNode_StopWordDoesNotScore(t *testing.T) {
+	node := Memory{
+		ID:          "gen-vm",
+		Name:        "generate-vm-access-prompt",
+		Description: "Generate an AI prompt template for setting up SSH access",
+		Project:     "infra",
+		Content:     "",
+	}
+	idf := map[string]float64{"generate": 3.0, "changelog": 4.0}
+	score := scoreNode(node, "generate changelog", idf)
+	// "generate" is a stop word → no word-level bonus.
+	// "changelog" is not in name/desc → no match.
+	// Full-query substring: "generate changelog" is NOT a substring of name.
+	// So score should be 0 (or very low from full-query desc match).
+	if score > 10 {
+		t.Fatalf("stop word 'generate' should not inflate score, got %f", score)
+	}
+}
+
+// TestScoreNode_StemmingBoostsCorrectSkill verifies that "tracking" in the
+// query matches "tracker" in the skill name via bidirectional stemming,
+// giving beads-tracker a higher score than a skill without the stem match.
+func TestScoreNode_StemmingBoostsCorrectSkill(t *testing.T) {
+	beads := Memory{
+		ID:          "beads-tracker",
+		Name:        "beads-tracker",
+		Description: "Use beads_rust as the default local issue tracker",
+		Project:     "tools",
+		Content:     "",
+	}
+	unrelated := Memory{
+		ID:          "other",
+		Name:        "other-skill",
+		Description: "Completely unrelated to tracking or issues",
+		Project:     "other",
+		Content:     "",
+	}
+	idf := map[string]float64{"tracking": 2.0, "local": 1.0, "repo": 1.0}
+	scoreBeads := scoreNode(beads, "local tracking repo", idf)
+	scoreOther := scoreNode(unrelated, "local tracking repo", idf)
+	if scoreBeads <= scoreOther {
+		t.Fatalf("beads-tracker (%f) should outscore unrelated (%f) for 'tracking' query", scoreBeads, scoreOther)
+	}
+}
