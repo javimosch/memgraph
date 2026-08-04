@@ -1,6 +1,8 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -249,5 +251,96 @@ func TestScoreNode_StemmingBoostsCorrectSkill(t *testing.T) {
 	scoreOther := scoreNode(unrelated, "local tracking repo", idf)
 	if scoreBeads <= scoreOther {
 		t.Fatalf("beads-tracker (%f) should outscore unrelated (%f) for 'tracking' query", scoreBeads, scoreOther)
+	}
+}
+
+// TestScoreNode_WordOverlapSignal verifies that the word-overlap signal
+// (learned from skills.match) boosts skills with more query words in
+// name+description. A skill matching 3 query words should outscore one
+// matching 1 query word, even if the 1-word match is in the name.
+func TestScoreNode_WordOverlapSignal(t *testing.T) {
+	// "multiple coding parallel" — 3 query words
+	multiMatch := Memory{
+		ID:          "mco",
+		Name:        "supercli-mco",
+		Description: "Orchestrate multiple AI coding agents in parallel using MCO",
+		Project:     "supercli",
+		Content:     "",
+	}
+	// "coding" only — 1 query word, but in the name
+	singleMatch := Memory{
+		ID:          "bridge",
+		Name:        "coding-bridge-api",
+		Description: "Provides access to the coding-bridge multi-provider AI system",
+		Project:     "api",
+		Content:     "",
+	}
+	idf := map[string]float64{"multiple": 2.0, "coding": 3.0, "parallel": 4.0}
+	scoreMulti := scoreNode(multiMatch, "multiple coding parallel", idf)
+	scoreSingle := scoreNode(singleMatch, "multiple coding parallel", idf)
+	if scoreMulti <= scoreSingle {
+		t.Fatalf("3-word overlap (%f) should outscore 1-word name match (%f)", scoreMulti, scoreSingle)
+	}
+}
+
+// TestScanSkillFiles_FollowsSymlinks verifies that scanSkillFiles follows
+// symlinked skill directories and deduplicates by realpath. This was a bug
+// where ~50% of skills (all symlinked ones) were missing from the graph.
+func TestScanSkillFiles_FollowsSymlinks(t *testing.T) {
+	// Create a temp dir with a real skill and a symlinked skill
+	tmpDir := t.TempDir()
+	realDir := t.TempDir()
+
+	// Real skill in the main dir
+	realSkill := filepath.Join(tmpDir, "real-skill", "SKILL.md")
+	os.MkdirAll(filepath.Dir(realSkill), 0755)
+	os.WriteFile(realSkill, []byte("---\nname: real-skill\ndescription: A real skill\n---\n# real-skill\n"), 0644)
+
+	// Symlinked skill: symlink in main dir → real dir
+	symlinkedReal := filepath.Join(realDir, "symlinked-skill", "SKILL.md")
+	os.MkdirAll(filepath.Dir(symlinkedReal), 0755)
+	os.WriteFile(symlinkedReal, []byte("---\nname: symlinked-skill\ndescription: A symlinked skill\n---\n# symlinked-skill\n"), 0644)
+
+	symlinkPath := filepath.Join(tmpDir, "symlinked-skill")
+	os.Symlink(filepath.Join(realDir, "symlinked-skill"), symlinkPath)
+
+	skills, err := scanSkillFiles(tmpDir)
+	if err != nil {
+		t.Fatalf("scanSkillFiles error: %v", err)
+	}
+	if len(skills) != 2 {
+		t.Fatalf("expected 2 skills (1 real + 1 symlinked), got %d: %+v", len(skills), skills)
+	}
+	ids := map[string]bool{}
+	for _, s := range skills {
+		ids[s.ID] = true
+	}
+	if !ids["real-skill"] {
+		t.Fatal("missing real-skill")
+	}
+	if !ids["symlinked-skill"] {
+		t.Fatal("missing symlinked-skill (symlink not followed)")
+	}
+}
+
+// TestScanSkillFiles_DedupByRealpath verifies that the same skill appearing
+// via multiple paths (e.g. ~/.agents + ~/.claude symlink) is only ingested once.
+func TestScanSkillFiles_DedupByRealpath(t *testing.T) {
+	realDir := t.TempDir()
+	realSkill := filepath.Join(realDir, "shared-skill", "SKILL.md")
+	os.MkdirAll(filepath.Dir(realSkill), 0755)
+	os.WriteFile(realSkill, []byte("---\nname: shared-skill\ndescription: Shared\n---\n# shared\n"), 0644)
+
+	// Two dirs, each with a symlink to the same real skill
+	dir1 := t.TempDir()
+	dir2 := t.TempDir()
+	os.Symlink(filepath.Join(realDir, "shared-skill"), filepath.Join(dir1, "shared-skill"))
+	os.Symlink(filepath.Join(realDir, "shared-skill"), filepath.Join(dir2, "shared-skill"))
+
+	skills1, _ := scanSkillFiles(dir1)
+	skills2, _ := scanSkillFiles(dir2)
+	// Each dir should find the skill once
+	if len(skills1) != 1 || len(skills2) != 1 {
+		t.Fatalf("expected 1 skill per dir, got %d and %d", len(skills1), len(skills2))
 	}
 }

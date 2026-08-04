@@ -134,17 +134,75 @@ func makeSkillID(dirName string) string {
 func scanSkillFiles(dir string) ([]skillInput, error) {
 	var skills []skillInput
 	seenIDs := make(map[string]bool)
+	seenReal := make(map[string]bool) // dedup by realpath (symlink resolution)
 
 	err := filepath.WalkDir(dir, func(path string, info fs.DirEntry, err error) error {
 		if err != nil {
 			return nil
 		}
+		// Follow symlinks: resolve to real path and dedup by realpath.
+		// This was previously skipping symlinks entirely, missing ~50% of skills
+		// (many skills are symlinked across ~/.agents, ~/.claude, ~/.config/devin, ~/.codeium).
+		real, rerr := filepath.EvalSymlinks(path)
+		if rerr != nil {
+			real = path
+		}
 		if info.Type()&os.ModeSymlink != 0 {
-			return nil
+			// For symlinked dirs, WalkDir doesn't recurse into them by default.
+			// We handle the target file directly below.
+			fi, statErr := os.Stat(real)
+			if statErr != nil {
+				return nil
+			}
+			if fi.IsDir() {
+				// Symlinked directory: walk the real path to find SKILL.md inside
+				filepath.WalkDir(real, func(subPath string, subInfo fs.DirEntry, subErr error) error {
+					if subErr != nil {
+						return nil
+					}
+					if subInfo.IsDir() {
+						return nil
+					}
+					subReal, srErr := filepath.EvalSymlinks(subPath)
+					if srErr != nil {
+						subReal = subPath
+					}
+					if seenReal[subReal] {
+						return nil
+					}
+					seenReal[subReal] = true
+					subName := subInfo.Name()
+					var skill skillInput
+					var perr error
+					if subName == "SKILL.md" {
+						skill, perr = parseSkillFile(subPath)
+					} else if strings.HasSuffix(subName, ".md") {
+						skill, perr = parseMarkdownFile(subPath)
+					} else {
+						return nil
+					}
+					if perr != nil {
+						return nil
+					}
+					if seenIDs[skill.ID] {
+						return nil
+					}
+					seenIDs[skill.ID] = true
+					skills = append(skills, skill)
+					return nil
+				})
+				return nil
+			}
+			// Symlinked file: process the real file
 		}
 		if info.IsDir() {
 			return nil
 		}
+
+		if seenReal[real] {
+			return nil
+		}
+		seenReal[real] = true
 
 		name := info.Name()
 		var skill skillInput

@@ -363,6 +363,34 @@ func scoreNode(node Memory, query string, idf map[string]float64) float64 {
 		}
 	}
 
+	// Word-overlap signal (learned from skills.match):
+	// Count how many non-stopword query words appear as substrings in
+	// name + description. This is the skills.match approach — pure word
+	// count, no IDF, no position weighting. It's simple but effective:
+	// "changelog" in the query matches "changelog-updater" just as well
+	// as "hart-changelog", regardless of how rare "changelog" is.
+	// Weight: 25 points per matched word. This is enough to break ties
+	// in favor of skills that have more query words in their name/desc,
+	// and to counteract IDF-weighted name matches when the overall word
+	// overlap favors a different skill.
+	overlap := 0
+	combinedLower := name + " " + desc
+	for _, qw := range queryWords {
+		if len(qw) < 3 || isAllDigits(qw) || queryStopWords[qw] {
+			continue
+		}
+		if strings.HasSuffix(qw, "s") && len(qw) > 3 && queryStopWords[qw[:len(qw)-1]] {
+			continue
+		}
+		if strings.HasSuffix(qw, "ing") && len(qw) > 4 && queryStopWords[qw[:len(qw)-3]] {
+			continue
+		}
+		if strings.Contains(combinedLower, qw) {
+			overlap++
+		}
+	}
+	score += float64(overlap) * 40
+
 	return score
 }
 
