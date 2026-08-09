@@ -231,15 +231,17 @@ func handleProfile(cfg *Config) {
 
 // projectScope holds info about one project memory scope (one git repo).
 type projectScope struct {
-	Scope    string `json:"scope"`     // sanitized path (dir name)
+	Name     string `json:"name"`      // human-readable name (from registry or inferred)
+	Scope    string `json:"scope"`     // sanitized path or remote key (dir name)
 	Memories int    `json:"memories"`  // memory file count
 	Path     string `json:"path"`      // full path to memory dir
+	Remote   string `json:"remote"`    // remote scope key if registered, empty otherwise
 }
 
-// handleProjects lists all project scopes across all repos, not just the
-// current git scope. This is the discovery command for agents that don't
-// know which projects exist. Scans ~/.memgraph/projects/<scope>/memory/.
+// handleProjects lists all project scopes across all repos, merging the
+// project registry (named projects) with scope dirs on disk.
 func handleProjects(cfg *Config) {
+	reg := loadRegistry()
 	projectsDir := filepath.Join(getGlobalMemgraphDir(), "projects")
 	entries, err := os.ReadDir(projectsDir)
 	if err != nil {
@@ -251,24 +253,49 @@ func handleProjects(cfg *Config) {
 		os.Exit(92)
 	}
 
+	// Build a set of scope dirs that are in the registry
+	registryScopes := make(map[string]string) // scope dir → project name
+	for name, entry := range reg.Projects {
+		// Extract scope from path: .../projects/<scope>/memory
+		dir := filepath.Dir(entry.Path)
+		scope := filepath.Base(dir)
+		registryScopes[scope] = name
+	}
+
 	var scopes []projectScope
 	for _, entry := range entries {
 		if !entry.IsDir() {
 			continue
 		}
-		memDir := filepath.Join(projectsDir, entry.Name(), "memory")
+		scopeName := entry.Name()
+		memDir := filepath.Join(projectsDir, scopeName, "memory")
 		count := countMemoryFiles(memDir)
+
+		// Use registry name if available, otherwise infer from scope
+		displayName := registryScopes[scopeName]
+		if displayName == "" {
+			displayName = inferProjectName(scopeName)
+		}
+
+		// Check if this scope has a remote in the registry
+		remoteKey := ""
+		if regEntry, ok := reg.Projects[displayName]; ok && regEntry.Remote != "" {
+			remoteKey = regEntry.Remote
+		}
+
 		scopes = append(scopes, projectScope{
-			Scope:    entry.Name(),
+			Name:     displayName,
+			Scope:    scopeName,
 			Memories: count,
 			Path:     memDir,
+			Remote:   remoteKey,
 		})
 	}
 
 	// Sort by memory count descending
 	sort.Slice(scopes, func(i, j int) bool {
 		if scopes[i].Memories == scopes[j].Memories {
-			return scopes[i].Scope < scopes[j].Scope
+			return scopes[i].Name < scopes[j].Name
 		}
 		return scopes[i].Memories > scopes[j].Memories
 	})
@@ -286,12 +313,111 @@ func handleProjects(cfg *Config) {
 		return
 	}
 
-	fmt.Printf("Project scopes (%d) — %s\n\n", len(scopes), projectsDir)
-	fmt.Printf("  %-50s  %8s  %s\n", "SCOPE", "MEMORIES", "PATH")
+	fmt.Printf("Projects (%d) — %s\n\n", len(scopes), projectsDir)
+	fmt.Printf("  %-20s  %-45s  %8s  %s\n", "NAME", "SCOPE", "MEMORIES", "PATH")
 	for _, s := range scopes {
-		fmt.Printf("  %-50s  %8d  %s\n", s.Scope, s.Memories, s.Path)
+		fmt.Printf("  %-20s  %-45s  %8d  %s\n", s.Name, s.Scope, s.Memories, s.Path)
 	}
-	fmt.Printf("\nUse --memory-dir <path> to access any scope.\n")
+	fmt.Printf("\nUse --project <name> or --memory-dir <path> to access any scope.\n")
+	fmt.Printf("Use 'memgraph attach <name>' to register or rename a project.\n")
+}
+
+// handleAttach registers the current repo (or a given scope) under a
+// human-readable project name. This binds a stable name to a memory dir
+// so --project <name> works from any directory, even after the repo is
+// moved or deleted.
+//
+// Usage:
+//   memgraph attach <name>                    # register current repo as <name>
+//   memgraph attach <name> --from-scope <scope>  # rebind an orphaned scope
+//   memgraph attach --remove <name>           # unregister a project name
+func handleAttach(cfg *Config, reg *ProjectRegistry) {
+	args, opts := parseCommandArgs(os.Args[2:])
+
+	if opts.RemoveAttach && opts.AttachName != "" {
+		// Unregister mode
+		if !reg.unregister(opts.AttachName) {
+			if jsonOutput {
+				errorResponse(86, "not_found", fmt.Sprintf("Project '%s' not in registry", opts.AttachName), false)
+			} else {
+				fmt.Printf("Project '%s' not in registry.\n", opts.AttachName)
+			}
+			os.Exit(86)
+		}
+		if err := reg.save(); err != nil {
+			errorResponse(110, "save_error", fmt.Sprintf("Failed to save registry: %v", err), false)
+			os.Exit(110)
+		}
+		if jsonOutput {
+			successResponse(map[string]any{"status": "removed", "name": opts.AttachName})
+		} else {
+			fmt.Printf("Project '%s' removed from registry.\n", opts.AttachName)
+		}
+		return
+	}
+
+	if len(args) == 0 && opts.AttachName == "" {
+		if jsonOutput {
+			errorResponse(85, "missing_argument", "Usage: memgraph attach <name> [--from-scope <scope>]", false)
+		} else {
+			fmt.Println("Usage: memgraph attach <name> [--from-scope <scope>]")
+			fmt.Println("       memgraph attach --remove <name>")
+		}
+		os.Exit(85)
+	}
+
+	name := opts.AttachName
+	if name == "" && len(args) > 0 {
+		name = args[0]
+	}
+
+	var memDir string
+	var remoteScope string
+
+	if opts.FromScope != "" {
+		// Rebind an orphaned scope
+		memDir = filepath.Join(getGlobalMemgraphDir(), "projects", opts.FromScope, "memory")
+		if !dirExists(memDir) {
+			if jsonOutput {
+				errorResponse(92, "resource_not_found", fmt.Sprintf("Scope dir not found: %s", memDir), false)
+			} else {
+				fmt.Printf("Scope dir not found: %s\n", memDir)
+			}
+			os.Exit(92)
+		}
+		remoteScope = opts.FromScope
+	} else {
+		// Register current repo
+		memDir = cfg.MemoryDir
+		// Try to get remote for stable key
+		remote := getGitRemoteURL()
+		if remote != "" {
+			remoteScope = normalizeRemoteURL(remote)
+		} else {
+			remoteScope = sanitizePath(cfg.ProjectRoot)
+		}
+	}
+
+	reg.register(name, memDir, remoteScope)
+	if err := reg.save(); err != nil {
+		errorResponse(110, "save_error", fmt.Sprintf("Failed to save registry: %v", err), false)
+		os.Exit(110)
+	}
+
+	if jsonOutput {
+		successResponse(map[string]any{
+			"status": "attached",
+			"name":   name,
+			"path":   memDir,
+			"remote": remoteScope,
+		})
+	} else {
+		fmt.Printf("Project '%s' attached to:\n  %s\n", name, memDir)
+		if remoteScope != "" {
+			fmt.Printf("  scope: %s\n", remoteScope)
+		}
+		fmt.Printf("\nNow use --project %s from any directory to access this scope.\n", name)
+	}
 }
 
 // countMemoryFiles counts memory_*.md files in a directory.
@@ -366,6 +492,7 @@ func printHelp() {
 	fmt.Println("    delete <id>       Delete a memory by ID (alias: forget)")
 	fmt.Println("    profile           Show memory statistics")
 	fmt.Println("    projects          List all project scopes across all repos (discovery command)")
+	fmt.Println("    attach <name>     Register current repo (or --from-scope <scope>) as a named project")
 	fmt.Println("    demo              Seed sample demo memories")
 	fmt.Println("    import <file>     Import memories from JSON/JSONL (- for stdin)")
 	fmt.Println("    graph-from-dir <dir>  Ingest SKILL.md files into a knowledge graph")

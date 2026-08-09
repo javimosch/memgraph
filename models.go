@@ -6,6 +6,10 @@ type Config struct {
 	MemoryDir    string
 	GlobalConfig GlobalConfig
 	ProjectRoot  string
+	// ScopeResolved is true when --project was used to resolve the memory
+	// dir via the registry. When true, command handlers should NOT also
+	// filter by project name (the scope already narrows to the right memories).
+	ScopeResolved bool
 }
 
 type SearchWeights struct {

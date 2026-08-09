@@ -29,6 +29,9 @@ type CommandOptions struct {
 	IncludePlans bool
 	Format      string
 	FormatSet   bool
+	FromScope    string
+	RemoveAttach bool
+	AttachName   string
 }
 
 func parseCommandArgs(args []string) ([]string, CommandOptions) {
@@ -183,6 +186,35 @@ func parseCommandArgs(args []string) ([]string, CommandOptions) {
 			continue
 		case strings.HasPrefix(arg, "--weights="):
 			opts.WeightsJSON = strings.TrimPrefix(arg, "--weights=")
+			continue
+		case arg == "--from-scope":
+			if i+1 < len(args) && !strings.HasPrefix(args[i+1], "--") {
+				opts.FromScope = args[i+1]
+				i++
+			}
+			continue
+		case strings.HasPrefix(arg, "--from-scope="):
+			opts.FromScope = strings.TrimPrefix(arg, "--from-scope=")
+			continue
+		case arg == "--remove":
+			opts.RemoveAttach = true
+			if i+1 < len(args) && !strings.HasPrefix(args[i+1], "--") {
+				opts.AttachName = args[i+1]
+				i++
+			}
+			continue
+		case strings.HasPrefix(arg, "--remove="):
+			opts.RemoveAttach = true
+			opts.AttachName = strings.TrimPrefix(arg, "--remove=")
+			continue
+		case arg == "--attach-name":
+			if i+1 < len(args) && !strings.HasPrefix(args[i+1], "--") {
+				opts.AttachName = args[i+1]
+				i++
+			}
+			continue
+		case strings.HasPrefix(arg, "--attach-name="):
+			opts.AttachName = strings.TrimPrefix(arg, "--attach-name=")
 			continue
 		}
 		positional = append(positional, arg)

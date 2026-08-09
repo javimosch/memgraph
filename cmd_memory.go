@@ -123,6 +123,11 @@ func handleRecall(cfg *Config) {
 		TagOnly: opts.TagOnly,
 		Weights: cfg.GlobalConfig.SearchWeights,
 	}
+	// If --project was used to resolve the scope via registry, don't also
+	// filter by project name — the scope already narrows to the right memories.
+	if cfg.ScopeResolved {
+		searchOpts.Project = ""
+	}
 	if opts.WeightsJSON != "" {
 		if w, ok := parseSearchWeightsJSON(opts.WeightsJSON); ok {
 			searchOpts.Weights = mergeSearchWeights(searchOpts.Weights, w)

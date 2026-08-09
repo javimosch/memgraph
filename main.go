@@ -80,15 +80,42 @@ func main() {
 		GlobalConfig: loadGlobalConfig(),
 	}
 
+	// Load the project registry (auto-imports existing scopes on first run)
+	reg := loadRegistry()
+
+	// Resolve memory directory. Priority:
+	//   1. --memory-dir (explicit override)
+	//   2. --project <name> via registry (global, works from any dir)
+	//   3. Git-based scope (remote-based if remote exists, else path-based)
+	//   4. Default .memgraph dir (no git repo)
 	if memoryDir != "" {
 		cfg.MemoryDir = memoryDir
 	} else {
-		gitRoot, err := findGitRepositoryRoot()
-		if err == nil {
-			cfg.ProjectRoot = gitRoot
-			cfg.MemoryDir = getProjectMemoryPath(gitRoot)
+		// Check if --project was passed and resolve via registry
+		_, opts := parseCommandArgs(os.Args[2:])
+		if opts.ProjectSet && opts.Project != "" {
+			if dir := resolveProjectName(&cfg, reg, opts.Project); dir != "" {
+				cfg.MemoryDir = dir
+				cfg.ScopeResolved = true
+			} else {
+				// Project not in registry — fall through to git scoping
+				// (the --project flag will still filter within that scope)
+				gitRoot, err := findGitRepositoryRoot()
+				if err == nil {
+					cfg.ProjectRoot = gitRoot
+					cfg.MemoryDir = getProjectMemoryPath(gitRoot)
+				} else {
+					cfg.MemoryDir = getDefaultMemoryDir()
+				}
+			}
 		} else {
-			cfg.MemoryDir = getDefaultMemoryDir()
+			gitRoot, err := findGitRepositoryRoot()
+			if err == nil {
+				cfg.ProjectRoot = gitRoot
+				cfg.MemoryDir = getProjectMemoryPath(gitRoot)
+			} else {
+				cfg.MemoryDir = getDefaultMemoryDir()
+			}
 		}
 	}
 
@@ -119,6 +146,8 @@ func main() {
 		handleProfile(&cfg)
 	case "projects":
 		handleProjects(&cfg)
+	case "attach":
+		handleAttach(&cfg, reg)
 	case "demo":
 		handleDemo(&cfg)
 	case "import":

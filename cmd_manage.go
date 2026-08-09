@@ -28,8 +28,12 @@ func handleList(cfg *Config) {
 	}
 
 	var memories []Memory
+	projectFilter := opts.Project
+	if cfg.ScopeResolved {
+		projectFilter = ""
+	}
 	for _, memory := range index.Memories {
-		if opts.Project != "" && memory.Project != opts.Project {
+		if projectFilter != "" && memory.Project != projectFilter {
 			continue
 		}
 		if opts.Session != "" && memory.Session != opts.Session {
