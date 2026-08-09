@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 )
 
@@ -228,6 +229,86 @@ func handleProfile(cfg *Config) {
 	}
 }
 
+// projectScope holds info about one project memory scope (one git repo).
+type projectScope struct {
+	Scope    string `json:"scope"`     // sanitized path (dir name)
+	Memories int    `json:"memories"`  // memory file count
+	Path     string `json:"path"`      // full path to memory dir
+}
+
+// handleProjects lists all project scopes across all repos, not just the
+// current git scope. This is the discovery command for agents that don't
+// know which projects exist. Scans ~/.memgraph/projects/<scope>/memory/.
+func handleProjects(cfg *Config) {
+	projectsDir := filepath.Join(getGlobalMemgraphDir(), "projects")
+	entries, err := os.ReadDir(projectsDir)
+	if err != nil {
+		if jsonOutput {
+			errorResponse(92, "resource_not_found", "No projects directory found. Run 'memgraph init' in a repo first.", false)
+		} else {
+			fmt.Println("No projects found. Run 'memgraph init' in a git repo to create one.")
+		}
+		os.Exit(92)
+	}
+
+	var scopes []projectScope
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		memDir := filepath.Join(projectsDir, entry.Name(), "memory")
+		count := countMemoryFiles(memDir)
+		scopes = append(scopes, projectScope{
+			Scope:    entry.Name(),
+			Memories: count,
+			Path:     memDir,
+		})
+	}
+
+	// Sort by memory count descending
+	sort.Slice(scopes, func(i, j int) bool {
+		if scopes[i].Memories == scopes[j].Memories {
+			return scopes[i].Scope < scopes[j].Scope
+		}
+		return scopes[i].Memories > scopes[j].Memories
+	})
+
+	if jsonOutput {
+		successResponse(map[string]any{
+			"projects": scopes,
+			"count":    len(scopes),
+		})
+		return
+	}
+
+	if len(scopes) == 0 {
+		fmt.Println("No project scopes found. Run 'memgraph init' in a git repo to create one.")
+		return
+	}
+
+	fmt.Printf("Project scopes (%d) — %s\n\n", len(scopes), projectsDir)
+	fmt.Printf("  %-50s  %8s  %s\n", "SCOPE", "MEMORIES", "PATH")
+	for _, s := range scopes {
+		fmt.Printf("  %-50s  %8d  %s\n", s.Scope, s.Memories, s.Path)
+	}
+	fmt.Printf("\nUse --memory-dir <path> to access any scope.\n")
+}
+
+// countMemoryFiles counts memory_*.md files in a directory.
+func countMemoryFiles(dir string) int {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return 0
+	}
+	count := 0
+	for _, e := range entries {
+		if !e.IsDir() && strings.HasPrefix(e.Name(), "memory_") && strings.HasSuffix(e.Name(), ".md") {
+			count++
+		}
+	}
+	return count
+}
+
 type tagCount struct {
 	Name  string `json:"name"`
 	Count int    `json:"count"`
@@ -284,6 +365,7 @@ func printHelp() {
 	fmt.Println("    edit <id> <text>  Edit a memory by ID")
 	fmt.Println("    delete <id>       Delete a memory by ID (alias: forget)")
 	fmt.Println("    profile           Show memory statistics")
+	fmt.Println("    projects          List all project scopes across all repos (discovery command)")
 	fmt.Println("    demo              Seed sample demo memories")
 	fmt.Println("    import <file>     Import memories from JSON/JSONL (- for stdin)")
 	fmt.Println("    graph-from-dir <dir>  Ingest SKILL.md files into a knowledge graph")

@@ -64,6 +64,18 @@ func main() {
 		return
 	}
 
+	// Intercept --help/-h as a subcommand argument (e.g. "memgraph recall --help")
+	// so it doesn't get treated as a query or memory ID.
+	for i := 1; i < len(os.Args); i++ {
+		if os.Args[i] == command {
+			if i+1 < len(os.Args) && (os.Args[i+1] == "--help" || os.Args[i+1] == "-h") {
+				printHelp()
+				return
+			}
+			break
+		}
+	}
+
 	cfg := Config{
 		GlobalConfig: loadGlobalConfig(),
 	}
@@ -105,6 +117,8 @@ func main() {
 		handleBridge(&cfg)
 	case "profile":
 		handleProfile(&cfg)
+	case "projects":
+		handleProjects(&cfg)
 	case "demo":
 		handleDemo(&cfg)
 	case "import":
