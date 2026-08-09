@@ -33,6 +33,15 @@ type Link struct {
 	Value    string `json:"value,omitempty"`
 }
 
+// Section represents an addressable [slug] block within a memory's content.
+type Section struct {
+	Slug      string `json:"slug"`
+	Title     string `json:"title"`
+	LineStart int    `json:"line_start"`
+	LineEnd   int    `json:"line_end"`
+	Preview   string `json:"preview"`
+}
+
 type Memory struct {
 	ID          string    `json:"id"`
 	Name        string    `json:"name"`
@@ -45,6 +54,7 @@ type Memory struct {
 	Content     string    `json:"content"`
 	FilePath    string    `json:"file_path,omitempty"`
 	Links       []Link    `json:"links,omitempty"`
+	Sections    []Section `json:"sections,omitempty"`
 }
 
 type GraphEdge struct {
@@ -70,15 +80,17 @@ type SearchIndex struct {
 }
 
 type SearchResult struct {
-	MemoryID   string   `json:"memory_id"`
-	Score      float64  `json:"score"`
-	Title      string   `json:"title"`
-	Content    string   `json:"content"`
-	MemoryType string   `json:"memory_type"`
-	Project    string   `json:"project"`
-	Session    string   `json:"session"`
-	Tags       []string `json:"tags"`
-	Created    string   `json:"created"`
+	MemoryID   string    `json:"memory_id"`
+	Score      float64   `json:"score"`
+	Title      string    `json:"title"`
+	Content    string    `json:"content"`
+	MemoryType string    `json:"memory_type"`
+	Project    string    `json:"project"`
+	Session    string    `json:"session"`
+	Tags       []string  `json:"tags"`
+	Created    string    `json:"created"`
+	Sections   []Section `json:"sections,omitempty"`
+	FilePath   string    `json:"file_path,omitempty"`
 }
 
 type SearchOptions struct {

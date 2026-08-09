@@ -27,6 +27,8 @@ type CommandOptions struct {
 	AutoSync    bool
 	PollInterval int
 	IncludePlans bool
+	Format      string
+	FormatSet   bool
 }
 
 func parseCommandArgs(args []string) ([]string, CommandOptions) {
@@ -158,6 +160,17 @@ func parseCommandArgs(args []string) ([]string, CommandOptions) {
 			continue
 		case arg == "--include-plans":
 			opts.IncludePlans = true
+			continue
+		case arg == "--format":
+			opts.FormatSet = true
+			if i+1 < len(args) && !strings.HasPrefix(args[i+1], "--") {
+				opts.Format = args[i+1]
+				i++
+			}
+			continue
+		case strings.HasPrefix(arg, "--format="):
+			opts.FormatSet = true
+			opts.Format = strings.TrimPrefix(arg, "--format=")
 			continue
 		case arg == "--tag-only":
 			opts.TagOnly = true

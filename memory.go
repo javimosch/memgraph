@@ -4,10 +4,14 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
 )
+
+// slugRe matches lines like "[p22-diagnostics]" at the start of a content line.
+var slugRe = regexp.MustCompile(`^\[([a-zA-Z0-9][a-zA-Z0-9_\-./]*)\]\s*(.*)`)
 
 func parseMemory(content, filename string) Memory {
 	lines := strings.Split(content, "\n")
@@ -88,7 +92,85 @@ func parseMemory(content, filename string) Memory {
 	}
 
 	memory.Content = strings.Join(contentLines, "\n")
+	memory.Sections = parseSections(memory.Content)
 	return memory
+}
+
+// parseSections scans content for [slug] markers and returns addressable
+// sections with line ranges (1-based, inclusive). Content without any [slug]
+// markers gets a single implicit section with slug "body".
+func parseSections(content string) []Section {
+	lines := strings.Split(content, "\n")
+
+	// Find slug line indices (0-based in lines slice).
+	type slugPos struct {
+		idx  int
+		slug string
+		rest string
+	}
+	var positions []slugPos
+	for i, line := range lines {
+		m := slugRe.FindStringSubmatch(line)
+		if m != nil {
+			positions = append(positions, slugPos{idx: i, slug: m[1], rest: m[2]})
+		}
+	}
+
+	if len(positions) == 0 {
+		// No slugs — one implicit section covering everything.
+		preview := truncatePreview(strings.TrimSpace(content))
+		return []Section{{
+			Slug:      "body",
+			Title:     preview,
+			LineStart: 1,
+			LineEnd:   len(lines),
+			Preview:   preview,
+		}}
+	}
+
+	var sections []Section
+	for i, pos := range positions {
+		start := pos.idx + 1 // 1-based
+		var end int
+		if i+1 < len(positions) {
+			end = positions[i+1].idx // line before next slug (0-based idx = 1-based line - 1)
+		} else {
+			end = len(lines)
+		}
+		// Section content for preview/title.
+		sectionLines := lines[pos.idx : end]
+		sectionText := strings.TrimSpace(strings.Join(sectionLines, "\n"))
+		title := strings.TrimSpace(pos.rest)
+		if title == "" {
+			// Use first non-empty line after the slug line as title.
+			for _, l := range lines[pos.idx+1 : end] {
+				t := strings.TrimSpace(l)
+				if t != "" {
+					title = t
+					break
+				}
+			}
+		}
+		if title == "" {
+			title = pos.slug
+		}
+		sections = append(sections, Section{
+			Slug:      pos.slug,
+			Title:     truncatePreview(title),
+			LineStart: start,
+			LineEnd:   end,
+			Preview:   truncatePreview(sectionText),
+		})
+	}
+	return sections
+}
+
+func truncatePreview(s string) string {
+	s = strings.TrimSpace(s)
+	if len(s) > 120 {
+		return s[:120] + "..."
+	}
+	return s
 }
 
 func sanitizeYAMLValue(s string) string {

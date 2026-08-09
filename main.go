@@ -87,6 +87,8 @@ func main() {
 		handleRemember(&cfg)
 	case "recall", "search":
 		handleRecall(&cfg)
+	case "read":
+		handleRead(&cfg)
 	case "list", "ls":
 		handleList(&cfg)
 	case "sessions":

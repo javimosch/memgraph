@@ -330,6 +330,8 @@ func memorySearchResult(memoryID string, memory Memory, score float64) SearchRes
 		Session:    memory.Session,
 		Tags:       memory.Tags,
 		Created:    memory.Created.Format(time.RFC3339),
+		Sections:   memory.Sections,
+		FilePath:   memory.FilePath,
 	}
 }
 
