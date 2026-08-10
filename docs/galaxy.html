@@ -1,0 +1,653 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>memgraph — Via Lactea Galaxy (Demo)</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: 'Inter', system-ui, sans-serif; background: #000; overflow: hidden; }
+    #cy { position: fixed; inset: 0; background: #000; overflow: hidden; }
+    #galaxy-info {
+      position: fixed; bottom: 1rem; left: 1rem;
+      color: rgba(200, 220, 255, 0.5); font-size: 11px;
+      pointer-events: none; z-index: 5;
+    }
+    header {
+      position: fixed; top: 0; left: 0; right: 0; z-index: 10;
+      display: flex; align-items: center; gap: 1rem;
+      padding: 0.75rem 1.5rem;
+      background: linear-gradient(180deg, rgba(0,0,8,0.9) 0%, rgba(0,0,8,0) 100%);
+    }
+    header h1 { color: #a8c8ff; font-size: 1.1rem; font-weight: 600; letter-spacing: 0.02em; }
+    header .badge {
+      font-size: 0.65rem; font-family: monospace; color: #60a5fa;
+      border: 1px solid rgba(96,165,250,0.3); border-radius: 4px; padding: 1px 6px;
+    }
+    header .controls { display: flex; align-items: center; gap: 0.75rem; margin-left: auto; }
+    header input[type="text"] {
+      background: rgba(15,23,42,0.8); border: 1px solid rgba(51,65,85,0.6);
+      border-radius: 6px; padding: 5px 12px; color: #e2e8f0;
+      font-size: 0.8rem; width: 200px; outline: none;
+    }
+    header input[type="text"]:focus { border-color: rgba(96,165,250,0.5); }
+    header label { font-size: 0.7rem; color: #94a3b8; display: flex; align-items: center; gap: 3px; }
+    header label input { accent-color: #3b82f6; }
+    #panel {
+      position: fixed; top: 0; right: 0; bottom: 0; width: 420px;
+      background: rgba(8,12,24,0.95); border-left: 1px solid rgba(51,65,85,0.5);
+      padding: 2rem 1.5rem; overflow-y: auto; z-index: 20;
+      transform: translateX(100%); transition: transform 0.2s ease;
+    }
+    #panel:not(.hidden) { transform: translateX(0); }
+    #panel-close {
+      position: absolute; top: 0.75rem; right: 1rem;
+      background: none; border: none; color: #64748b;
+      font-size: 1.5rem; cursor: pointer; line-height: 1;
+    }
+    #panel-close:hover { color: #e2e8f0; }
+    #panel h2 { color: #a8c8ff; font-size: 1.1rem; margin-bottom: 0.5rem; }
+    #panel .meta { color: #64748b; font-size: 0.75rem; margin-bottom: 1rem; }
+    #panel .meta span { margin-right: 0.75rem; }
+    #panel pre {
+      background: rgba(0,0,0,0.4); border: 1px solid rgba(51,65,85,0.3);
+      border-radius: 6px; padding: 0.75rem; overflow-x: auto;
+      font-size: 0.75rem; color: #94a3b8; margin: 0.5rem 0;
+    }
+    #panel p { color: #cbd5e1; font-size: 0.85rem; line-height: 1.6; margin: 0.5rem 0; }
+    #panel code { color: #93c5fd; font-size: 0.8rem; }
+    #tooltip {
+      position: fixed; background: rgba(15,23,42,0.95); border: 1px solid rgba(51,65,85,0.5);
+      border-radius: 4px; padding: 3px 8px; font-size: 0.75rem; color: #a8c8ff;
+      pointer-events: none; z-index: 30; display: none;
+    }
+    #demo-banner {
+      position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+      background: rgba(8,12,24,0.9); border: 1px solid rgba(96,165,250,0.2);
+      border-radius: 12px; padding: 2rem 3rem; text-align: center; z-index: 40;
+      transition: opacity 0.5s; pointer-events: none;
+    }
+    #demo-banner h2 { color: #a8c8ff; font-size: 1.5rem; margin-bottom: 0.5rem; }
+    #demo-banner p { color: #64748b; font-size: 0.85rem; }
+    #demo-banner.fade { opacity: 0; }
+  </style>
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+    }
+  }
+  </script>
+</head>
+<body>
+  <header>
+    <h1>memgraph</h1>
+    <span class="badge">galaxy demo</span>
+    <div class="controls">
+      <input id="search" type="text" placeholder="Search stars..." autocomplete="off">
+      <label><input type="checkbox" class="edge-toggle" value="references" checked> references</label>
+      <label><input type="checkbox" class="edge-toggle" value="similar"> similar</label>
+      <label><input type="checkbox" class="edge-toggle" value="shared-keyword"> shared-keyword</label>
+    </div>
+  </header>
+  <main>
+    <div id="cy"></div>
+    <aside id="panel" class="hidden">
+      <button id="panel-close" aria-label="Close">×</button>
+      <div id="panel-content"></div>
+    </aside>
+  </main>
+  <div id="tooltip"></div>
+  <div id="demo-banner">
+    <h2>Via Lactea</h2>
+    <p>Mocked skill galaxy — drag, zoom, click stars</p>
+  </div>
+
+  <script type="module">
+  import * as THREE from 'three';
+  import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+  // --- Mocked graph data (sample of a real skill graph) ---
+  const MOCK_GRAPH = {
+    nodes: [
+      // Namespace nodes (golden core stars)
+      {id:"namespace_jar",name:"jar",type:"namespace",project:"jar",tags:[],file_path:""},
+      {id:"namespace_supercli",name:"supercli",type:"namespace",project:"supercli",tags:[],file_path:""},
+      {id:"namespace_am",name:"am",type:"namespace",project:"am",tags:[],file_path:""},
+      {id:"namespace_general",name:"general",type:"namespace",project:"general",tags:[],file_path:""},
+      {id:"namespace_simpliciti",name:"simpliciti",type:"namespace",project:"simpliciti",tags:[],file_path:""},
+      {id:"namespace_machin",name:"machin",type:"namespace",project:"machin",tags:[],file_path:""},
+      {id:"namespace_hart",name:"hart",type:"namespace",project:"hart",tags:[],file_path:""},
+      {id:"namespace_token",name:"token",type:"namespace",project:"token",tags:[],file_path:""},
+
+      // jar skills
+      {id:"jar-rbm21-manage",name:"jar-rbm21-manage",type:"skill",project:"jar",tags:["jar","rbm21","manage","lxc","proxmox"],file_path:"/home/jarancibia/.agents/skills/jar-rbm21-manage/SKILL.md"},
+      {id:"jar-dk1-manage",name:"jar-dk1-manage",type:"skill",project:"jar",tags:["jar","dk1","manage","dedicated"],file_path:"/home/jarancibia/.agents/skills/jar-dk1-manage/SKILL.md"},
+      {id:"jar-dk2-manage",name:"jar-dk2-manage",type:"skill",project:"jar",tags:["jar","dk2","manage","dedicated"],file_path:"/home/jarancibia/.agents/skills/jar-dk2-manage/SKILL.md"},
+      {id:"jar-network-map",name:"jar-network-map",type:"skill",project:"jar",tags:["jar","network","map","topology"],file_path:"/home/jarancibia/.agents/skills/jar-network-map/SKILL.md"},
+      {id:"jar-mongo-vault-manage",name:"jar-mongo-vault-manage",type:"skill",project:"jar",tags:["jar","mongo","vault","manage"],file_path:"/home/jarancibia/.agents/skills/jar-mongo-vault-manage/SKILL.md"},
+      {id:"jar-saas-overview",name:"jar-saas-overview",type:"skill",project:"jar",tags:["jar","saas","overview","stripe"],file_path:"/home/jarancibia/.agents/skills/jar-saas-overview/SKILL.md"},
+      {id:"jar-remotecmd-manage",name:"jar-remotecmd-manage",type:"skill",project:"jar",tags:["jar","remotecmd","manage","relay"],file_path:"/home/jarancibia/.agents/skills/jar-remotecmd-manage/SKILL.md"},
+
+      // supercli skills
+      {id:"supercli-maintainer-workflow",name:"supercli-maintainer-workflow",type:"skill",project:"supercli",tags:["supercli","maintainer","workflow","plugin"],file_path:"/home/jarancibia/.agents/skills/supercli-maintainer-workflow/SKILL.md"},
+      {id:"supercli-gtm",name:"supercli-gtm",type:"skill",project:"supercli",tags:["supercli","gtm","marketing","launch"],file_path:"/home/jarancibia/.claude/skills/supercli-gtm/SKILL.md"},
+      {id:"supercli-cli-boilerplates",name:"supercli-cli-boilerplates",type:"skill",project:"supercli",tags:["supercli","cli","boilerplate","go"],file_path:"/home/jarancibia/.claude/skills/supercli-cli-boilerplates/SKILL.md"},
+      {id:"supercli-gtm-gif",name:"supercli-gtm-gif",type:"skill",project:"supercli",tags:["supercli","gif","demo","asciinema"],file_path:"/home/jarancibia/.agents/skills/supercli-gtm-gif/SKILL.md"},
+
+      // am skills
+      {id:"am-agent-operator",name:"am-agent-operator",type:"skill",project:"am",tags:["am","agent","operator","autopilot"],file_path:"/home/jarancibia/.agents/skills/am-agent-operator/SKILL.md"},
+      {id:"am-hart-weekplan",name:"am-hart-weekplan-artifact",type:"skill",project:"am",tags:["am","hart","weekplan","dashboard"],file_path:"/home/jarancibia/.claude/skills/am-hart-weekplan-artifact/SKILL.md"},
+      {id:"am-marketing",name:"am-marketing",type:"skill",project:"am",tags:["am","marketing","gtm","twitter"],file_path:"/home/jarancibia/.agents/skills/am-marketing/SKILL.md"},
+
+      // general skills
+      {id:"rtk",name:"rtk",type:"skill",project:"general",tags:["rtk","token","rust","proxy"],file_path:"/home/jarancibia/.agents/skills/rtk/SKILL.md"},
+      {id:"a2a-dev",name:"a2a-dev",type:"skill",project:"general",tags:["a2a","dev","sprint","skill"],file_path:"/home/jarancibia/.claude/skills/a2a-dev/SKILL.md"},
+      {id:"git-best-practices",name:"git-best-practices",type:"skill",project:"general",tags:["git","best","practices","commit"],file_path:"/home/jarancibia/.agents/skills/git-best-practices/SKILL.md"},
+      {id:"calibrate-skills",name:"calibrate-skills",type:"skill",project:"general",tags:["calibrate","skills","update","learnings"],file_path:"/home/jarancibia/.agents/skills/calibrate-skills/SKILL.md"},
+      {id:"skills-git-backup",name:"skills-git-backup",type:"skill",project:"general",tags:["skills","git","backup","sync"],file_path:"/home/jarancibia/.agents/skills/skills-git-backup/SKILL.md"},
+
+      // simpliciti skills
+      {id:"simpliciti-georedv3",name:"simpliciti-georedv3-estimate",type:"skill",project:"simpliciti",tags:["simpliciti","geored","v3","estimate"],file_path:"/home/jarancibia/.agents/skills/simpliciti-georedv3-estimate/SKILL.md"},
+      {id:"simpliciti-remotecmd",name:"simpliciti-remotecmd-backdoor",type:"skill",project:"simpliciti",tags:["simpliciti","remotecmd","backdoor","forti"],file_path:"/home/jarancibia/.config/devin/skills/simpliciti-remotecmd-backdoor/SKILL.md"},
+
+      // machin skills
+      {id:"machin-start",name:"machin-start",type:"skill",project:"machin",tags:["machin","start","bootstrap","cli"],file_path:"/home/jarancibia/.agents/skills/machin-start/SKILL.md"},
+      {id:"jar-machin-colibri",name:"jar-machin-colibri-rbm21",type:"skill",project:"machin",tags:["machin","colibri","rbm21","manage"],file_path:"/home/jarancibia/.agents/skills/jar-machin-colibri-rbm21-manage/SKILL.md"},
+
+      // hart skills
+      {id:"hart-diagram",name:"hart-diagram",type:"skill",project:"hart",tags:["hart","diagram","visualize","html"],file_path:"/home/jarancibia/.agents/skills/hart-diagram/SKILL.md"},
+      {id:"hart-custom-domains",name:"hart-custom-domains-dk1",type:"skill",project:"hart",tags:["hart","custom","domains","dk1"],file_path:"/home/jarancibia/.agents/skills/hart-custom-domains-dk1/SKILL.md"},
+
+      // token skills
+      {id:"token-reduction-ultimate",name:"token-reduction-ultimate",type:"skill",project:"token",tags:["token","reduction","ultimate","rtk"],file_path:"/home/jarancibia/.agents/skills/token-reduction-ultimate/SKILL.md"},
+      {id:"context-mode",name:"context-mode",type:"skill",project:"token",tags:["context","mode","mcp","sandbox"],file_path:"/home/jarancibia/.agents/skills/context-mode/SKILL.md"},
+    ],
+    edges: [
+      // namespace edges
+      {source:"namespace_jar",target:"jar-rbm21-manage",relation:"namespace"},
+      {source:"namespace_jar",target:"jar-dk1-manage",relation:"namespace"},
+      {source:"namespace_jar",target:"jar-dk2-manage",relation:"namespace"},
+      {source:"namespace_jar",target:"jar-network-map",relation:"namespace"},
+      {source:"namespace_jar",target:"jar-mongo-vault-manage",relation:"namespace"},
+      {source:"namespace_jar",target:"jar-saas-overview",relation:"namespace"},
+      {source:"namespace_jar",target:"jar-remotecmd-manage",relation:"namespace"},
+      {source:"namespace_supercli",target:"supercli-maintainer-workflow",relation:"namespace"},
+      {source:"namespace_supercli",target:"supercli-gtm",relation:"namespace"},
+      {source:"namespace_supercli",target:"supercli-cli-boilerplates",relation:"namespace"},
+      {source:"namespace_supercli",target:"supercli-gtm-gif",relation:"namespace"},
+      {source:"namespace_am",target:"am-agent-operator",relation:"namespace"},
+      {source:"namespace_am",target:"am-hart-weekplan",relation:"namespace"},
+      {source:"namespace_am",target:"am-marketing",relation:"namespace"},
+      {source:"namespace_general",target:"rtk",relation:"namespace"},
+      {source:"namespace_general",target:"a2a-dev",relation:"namespace"},
+      {source:"namespace_general",target:"git-best-practices",relation:"namespace"},
+      {source:"namespace_general",target:"calibrate-skills",relation:"namespace"},
+      {source:"namespace_general",target:"skills-git-backup",relation:"namespace"},
+      {source:"namespace_simpliciti",target:"simpliciti-georedv3",relation:"namespace"},
+      {source:"namespace_simpliciti",target:"simpliciti-remotecmd",relation:"namespace"},
+      {source:"namespace_machin",target:"machin-start",relation:"namespace"},
+      {source:"namespace_machin",target:"jar-machin-colibri",relation:"namespace"},
+      {source:"namespace_hart",target:"hart-diagram",relation:"namespace"},
+      {source:"namespace_hart",target:"hart-custom-domains",relation:"namespace"},
+      {source:"namespace_token",target:"token-reduction-ultimate",relation:"namespace"},
+      {source:"namespace_token",target:"context-mode",relation:"namespace"},
+
+      // references edges
+      {source:"jar-rbm21-manage",target:"jar-network-map",relation:"references"},
+      {source:"jar-dk1-manage",target:"jar-network-map",relation:"references"},
+      {source:"jar-dk2-manage",target:"jar-network-map",relation:"references"},
+      {source:"jar-saas-overview",target:"jar-mongo-vault-manage",relation:"references"},
+      {source:"supercli-maintainer-workflow",target:"supercli-gtm",relation:"references"},
+      {source:"supercli-gtm",target:"supercli-gtm-gif",relation:"references"},
+      {source:"am-marketing",target:"supercli-gtm",relation:"references"},
+      {source:"token-reduction-ultimate",target:"rtk",relation:"references"},
+      {source:"token-reduction-ultimate",target:"context-mode",relation:"references"},
+      {source:"calibrate-skills",target:"skills-git-backup",relation:"references"},
+      {source:"hart-diagram",target:"am-hart-weekplan",relation:"references"},
+
+      // similar edges (hidden by default)
+      {source:"jar-dk1-manage",target:"jar-dk2-manage",relation:"similar"},
+      {source:"supercli-gtm",target:"am-marketing",relation:"similar"},
+      {source:"rtk",target:"context-mode",relation:"similar"},
+      {source:"calibrate-skills",target:"a2a-dev",relation:"similar"},
+
+      // shared-keyword edges (hidden by default)
+      {source:"jar-rbm21-manage",target:"jar-machin-colibri",relation:"shared-keyword"},
+      {source:"hart-diagram",target:"hart-custom-domains",relation:"shared-keyword"},
+      {source:"supercli-maintainer-workflow",target:"supercli-cli-boilerplates",relation:"shared-keyword"},
+    ]
+  };
+
+  // --- Mocked skill content for panel ---
+  const MOCK_CONTENT = {
+    "jar-rbm21-manage": "# jar-rbm21-manage\n\nManage rbm21 (LXC VMID 201 on pve2). Covers systemd services, disk cleanup, and the polyscraper family.\n\n## Key facts\n- IP: 192.168.1.113\n- VMID: 201 on pve2\n- Runs: polyscraper-new, media-gallery, colibri\n\n```bash\nssh javi@rbm21\n```",
+    "token-reduction-ultimate": "# Token Reduction Ultimate\n\nMaximize your AI context budget by chaining smart proxies, sandboxed execution, and code intelligence.\n\n## MCP Tool Design — Two-Tier Pattern\n\n23 flat tools (2487 tokens) → 8 core + 1 admin (1158 tokens). 53% reduction.\n\n```bash\nrtk git status    # 60-90% token savings\ncontext-mode      # up to 98% via sandbox\n```",
+    "supercli-gtm": "# SuperCLI GTM\n\nGo-to-market strategy for SuperCLI. Covers HN/Reddit/ProductHunt launches, awesome-list submissions, and star growth.\n\n## Channels\n- Hacker News\n- Reddit r/programming\n- ProductHunt\n- X/Twitter demos",
+    "rtk": "# rtk — Rust Token Killer\n\nCLI proxy that intercepts command output and applies smart filtering.\n\n**Verified:** 11.3M tokens saved at 86% efficiency across 4,439 commands.\n\n```bash\nrtk ls           # compact directory listing\nrtk git status   # compressed git status\nrtk git diff     # ultra-condensed diff\n```",
+    "hart-diagram": "# hart-diagram\n\nTurn any infra/setup/architecture into a clean, shareable visual diagram — a self-contained HTML page published to a live URL via hart.\n\n## Usage\n```bash\nhart publish diagram.html --id my-stack\n```",
+    "calibrate-skills": "# calibrate-skills\n\nPropose targeted updates to SKILL.md files the agent consumed during a session. User approves each change by replying with numbers.\n\n## Workflow\n1. Collect learnings\n2. Pick consumed skills\n3. Build proposals\n4. Present to user\n5. Apply selected changes",
+  };
+
+  // --- Three.js galaxy (adapted from ui/graph.js) ---
+  const searchInput = document.getElementById('search');
+  const tooltip = document.getElementById('tooltip');
+  const panel = document.getElementById('panel');
+  const panelContent = document.getElementById('panel-content');
+  const closeBtn = document.getElementById('panel-close');
+  const banner = document.getElementById('demo-banner');
+
+  let scene, camera, renderer, controls;
+  let nodeMeshes = [], glowPoints = null, glowData = [], nodeLabels = [], edgeLines = [], allEdges = [], nodeMap = {};
+  let raycaster, mouse, hoveredNode = null;
+  let starField = null, dustField = null, glowTexture = null;
+  const labelTextureCache = {};
+
+  function makeGlowTexture() {
+    if (glowTexture) return glowTexture;
+    const size = 64;
+    const canvas = document.createElement('canvas');
+    canvas.width = size; canvas.height = size;
+    const ctx = canvas.getContext('2d');
+    const grad = ctx.createRadialGradient(size/2, size/2, 0, size/2, size/2, size/2);
+    grad.addColorStop(0, 'rgba(255,255,255,1)');
+    grad.addColorStop(0.2, 'rgba(255,255,255,0.6)');
+    grad.addColorStop(0.5, 'rgba(255,255,255,0.15)');
+    grad.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = grad; ctx.fillRect(0, 0, size, size);
+    glowTexture = new THREE.CanvasTexture(canvas);
+    glowTexture.minFilter = THREE.LinearFilter;
+    return glowTexture;
+  }
+
+  function projectColor(project) {
+    if (!project) return { r: 0.5, g: 0.69, b: 0.41 };
+    let h = 0;
+    for (let i = 0; i < project.length; i++) h = (h * 31 + project.charCodeAt(i)) % 360;
+    const c = new THREE.Color(); c.setHSL(h / 360, 0.7, 0.55);
+    return { r: c.r, g: c.g, b: c.b };
+  }
+
+  function makeLabelTexture(text, fontSize, color) {
+    const key = `${fontSize}:${color}:${text}`;
+    if (labelTextureCache[key]) return labelTextureCache[key];
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    ctx.font = `${fontSize}px system-ui, sans-serif`;
+    const metrics = ctx.measureText(text);
+    const w = Math.ceil(metrics.width) + 8, h = fontSize + 6;
+    canvas.width = w; canvas.height = h;
+    ctx.font = `${fontSize}px system-ui, sans-serif`;
+    ctx.shadowColor = 'rgba(100, 180, 255, 0.9)';
+    ctx.shadowBlur = 4;
+    ctx.fillStyle = color;
+    ctx.textBaseline = 'middle';
+    ctx.fillText(text, 4, h / 2);
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.minFilter = THREE.LinearFilter;
+    labelTextureCache[key] = tex;
+    return tex;
+  }
+
+  function makeLabel(text, fontSize, colorHex) {
+    const tex = makeLabelTexture(text, fontSize, colorHex);
+    const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false, blending: THREE.AdditiveBlending });
+    const sprite = new THREE.Sprite(mat);
+    sprite.scale.set(tex.image.width * 0.12, tex.image.height * 0.12, 1);
+    sprite.renderOrder = 999;
+    return sprite;
+  }
+
+  function galaxyLayout(graph) {
+    const groups = {};
+    for (const n of graph.nodes) {
+      const p = n.project || 'general';
+      if (!groups[p]) groups[p] = { project: p, hub: null, members: [] };
+      if (n.type === 'namespace') groups[p].hub = n;
+      else groups[p].members.push(n);
+    }
+    const list = Object.values(groups).map(g => {
+      g.members.sort((a, b) => a.name.localeCompare(b.name));
+      g.count = g.members.length + (g.hub ? 1 : 0);
+      return g;
+    }).sort((a, b) => b.count - a.count);
+
+    const pos = {}, numArms = 4, armSpacing = (Math.PI * 2) / numArms;
+    const galaxyRadius = 40 + Math.sqrt(list.length) * 35;
+    const coreRadius = 60;
+
+    for (let i = 0; i < list.length; i++) {
+      const g = list[i];
+      const arm = i % numArms;
+      const t = (i + 1) / list.length;
+      const distFromCore = coreRadius + t * galaxyRadius;
+      const angle = arm * armSpacing + t * 2.2 + Math.sin(i * 7.13) * 0.15;
+      const cx = Math.cos(angle) * distFromCore;
+      const cy = Math.sin(angle) * distFromCore;
+      if (g.hub) pos[g.hub.id] = { x: cx, y: cy };
+      const golden = 2.39996322972865332, spacing = 14;
+      for (let k = 0; k < g.members.length; k++) {
+        const r = 10 + spacing * Math.sqrt(k);
+        const a = k * golden + i * 0.3;
+        pos[g.members[k].id] = { x: cx + Math.cos(a) * r, y: cy + Math.sin(a) * r };
+      }
+    }
+    return pos;
+  }
+
+  function buildGalaxy(graph) {
+    allEdges = graph.edges || [];
+    const pos = galaxyLayout(graph);
+    const degrees = {};
+    for (const n of graph.nodes) degrees[n.id] = 0;
+    for (const e of allEdges) { degrees[e.source] = (degrees[e.source]||0)+1; degrees[e.target] = (degrees[e.target]||0)+1; }
+
+    nodeMeshes = []; glowData = []; nodeLabels = []; nodeMap = {};
+    const glowPositions = [], glowColors = [], glowSizes = [];
+
+    for (const n of graph.nodes) {
+      const p = pos[n.id] || { x: 0, y: 0 };
+      const isNs = n.type === 'namespace';
+      const col = isNs ? { r: 1.0, g: 0.85, b: 0.4 } : projectColor(n.project);
+      const color = new THREE.Color(col.r, col.g, col.b);
+      const size = isNs ? 3.5 : 1.2 + Math.min(degrees[n.id] || 0, 20) * 0.12;
+
+      const geo = new THREE.SphereGeometry(size, isNs ? 12 : 6, isNs ? 12 : 6);
+      const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 1.0 });
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.position.set(p.x, p.y, 0);
+      mesh.userData = { id: n.id, name: n.name, type: n.type, project: n.project, tags: n.tags, file_path: n.file_path, degree: degrees[n.id]||0, color, size, visible: true, baseSize: size };
+      scene.add(mesh); nodeMeshes.push(mesh); nodeMap[n.id] = mesh;
+
+      glowPositions.push(p.x, p.y, 0);
+      glowColors.push(col.r, col.g, col.b);
+      glowSizes.push(isNs ? 18 : 10);
+      glowData.push({ nodeId: n.id, visible: true, baseOpacity: isNs ? 0.4 : 0.25 });
+
+      const label = makeLabel(n.name || n.id, isNs ? 44 : 28, isNs ? '#ffe9a8' : '#a8c8ff');
+      label.position.set(p.x, p.y + size + 4, 1);
+      label.userData = { nodeId: n.id, visible: true };
+      scene.add(label); nodeLabels.push(label);
+    }
+
+    const glowGeo = new THREE.BufferGeometry();
+    glowGeo.setAttribute('position', new THREE.Float32BufferAttribute(glowPositions, 3));
+    glowGeo.setAttribute('color', new THREE.Float32BufferAttribute(glowColors, 3));
+    const glowMat = new THREE.PointsMaterial({ size: 20, map: makeGlowTexture(), vertexColors: true, transparent: true, opacity: 0.35, sizeAttenuation: true, blending: THREE.AdditiveBlending, depthWrite: false });
+    glowPoints = new THREE.Points(glowGeo, glowMat);
+    scene.add(glowPoints);
+
+    const edgePositions = [], edgeColors = [], edgeMeta = [];
+    for (const e of allEdges) {
+      if (e.relation === 'shared-keyword') continue;
+      const s = pos[e.source], t = pos[e.target];
+      if (!s || !t) continue;
+      edgePositions.push(s.x, s.y, 0, t.x, t.y, 0);
+      let col = e.relation === 'namespace' ? [0.6,0.5,0.3] : e.relation === 'references' ? [0.3,0.5,0.7] : e.relation === 'similar' ? [0.4,0.6,0.5] : [0.5,0.6,0.8];
+      edgeColors.push(...col, ...col);
+      edgeMeta.push({ source: e.source, target: e.target, relation: e.relation, visible: e.relation !== 'similar' });
+    }
+    const edgeGeo = new THREE.BufferGeometry();
+    edgeGeo.setAttribute('position', new THREE.Float32BufferAttribute(edgePositions, 3));
+    edgeGeo.setAttribute('color', new THREE.Float32BufferAttribute(edgeColors, 3));
+    const edgeMat = new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.25, blending: THREE.AdditiveBlending });
+    const edgeLine = new THREE.LineSegments(edgeGeo, edgeMat);
+    scene.add(edgeLine);
+    edgeLines.push({ line: edgeLine, meta: edgeMeta, geo: edgeGeo });
+
+    fitCamera();
+  }
+
+  function fitCamera(targets) {
+    let minX=Infinity, maxX=-Infinity, minY=Infinity, maxY=-Infinity;
+    const nodes = targets || nodeMeshes;
+    for (const m of nodes) {
+      if (!m.userData.visible) continue;
+      const p = m.position;
+      if (p.x<minX) minX=p.x; if (p.x>maxX) maxX=p.x; if (p.y<minY) minY=p.y; if (p.y>maxY) maxY=p.y;
+    }
+    if (minX===Infinity) { minX=-100; maxX=100; minY=-100; maxY=100; }
+    const cx=(minX+maxX)/2, cy=(minY+maxY)/2;
+    const dist = Math.max(maxX-minX, maxY-minY) * 0.6 + 80;
+    controls.target.set(cx, cy, 0);
+    camera.position.set(cx, cy, dist);
+    controls.update();
+  }
+
+  function rebuildEdgeGeometry() {
+    const positions = [], colors = [];
+    for (const el of edgeLines) {
+      for (const m of el.meta) {
+        if (!m.visible) continue;
+        const s = nodeMap[m.source], t = nodeMap[m.target];
+        if (!s || !t || !s.userData.visible || !t.userData.visible) continue;
+        positions.push(s.position.x, s.position.y, 0, t.position.x, t.position.y, 0);
+        let col = m.relation==='namespace' ? [0.6,0.5,0.3] : m.relation==='references' ? [0.3,0.5,0.7] : m.relation==='similar' ? [0.4,0.6,0.5] : [0.5,0.6,0.8];
+        colors.push(...col, ...col);
+      }
+      el.geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+      el.geo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+      el.geo.attributes.position.needsUpdate = true;
+    }
+  }
+
+  function toggleEdge(type, show) {
+    for (const el of edgeLines) for (const m of el.meta) if (m.relation === type) m.visible = show;
+    rebuildEdgeGeometry();
+  }
+
+  function updateFilter() {
+    const q = searchInput.value.trim().toLowerCase();
+    const visibleIds = new Set();
+    for (const m of nodeMeshes) {
+      const d = m.userData;
+      if (!q) { d.visible = true; m.visible = true; visibleIds.add(d.id); continue; }
+      d.visible = (d.name||'').toLowerCase().includes(q) || (d.project||'').toLowerCase().includes(q) || (d.tags||[]).some(t => t.includes(q));
+      m.visible = d.visible;
+      if (d.visible) visibleIds.add(d.id);
+    }
+    for (const lbl of nodeLabels) lbl.visible = visibleIds.has(lbl.userData.nodeId);
+    for (const gd of glowData) gd.visible = visibleIds.has(gd.nodeId);
+    rebuildEdgeGeometry();
+  }
+
+  function showPanel(id) {
+    panel.classList.remove('hidden');
+    const node = nodeMap[id];
+    const d = node ? node.userData : {};
+    const content = MOCK_CONTENT[id] || `# ${d.name || id}\n\nProject: ${d.project || 'unknown'}\nType: ${d.type || 'skill'}\nTags: ${(d.tags||[]).join(', ')}\n\nThis is a mocked skill. In the real memgraph serve, clicking a star loads the full SKILL.md content from disk.`;
+    panelContent.innerHTML = `
+      <h2>${d.name || id}</h2>
+      <div class="meta">
+        <span>project: ${d.project || '?'}</span>
+        <span>type: ${d.type || '?'}</span>
+        <span>degree: ${d.degree || 0}</span>
+      </div>
+      ${content.split('```').map((part, i) => i % 2 === 1 ? `<pre><code>${part.replace(/</g,'&lt;')}</code></pre>` : `<p>${part.replace(/\n/g,'<br>')}</p>`).join('')}
+    `;
+  }
+
+  closeBtn.addEventListener('click', () => panel.classList.add('hidden'));
+  searchInput.addEventListener('input', updateFilter);
+  searchInput.addEventListener('keydown', e => { if (e.key === 'Enter') { const q = searchInput.value.trim().toLowerCase(); if (q) { const t = nodeMeshes.filter(m => m.userData.visible); if (t.length) fitCamera(t); } else fitCamera(); } });
+  document.querySelectorAll('.edge-toggle').forEach(cb => cb.addEventListener('change', () => toggleEdge(cb.value, cb.checked)));
+
+  // Drag + click
+  let draggedNode = null, dragMoved = false, dragStartPos = null;
+  const dragPlane = new THREE.Plane(new THREE.Vector3(0,0,1), 0);
+  const dragIntersect = new THREE.Vector3();
+
+  function screenToWorld(event) {
+    const rect = renderer.domElement.getBoundingClientRect();
+    raycaster.setFromCamera(new THREE.Vector2(((event.clientX-rect.left)/rect.width)*2-1, -((event.clientY-rect.top)/rect.height)*2+1), camera);
+    raycaster.ray.intersectPlane(dragPlane, dragIntersect);
+    return dragIntersect.clone();
+  }
+
+  function onMouseDown(event) {
+    if (event.button !== 0) return;
+    const rect = renderer.domElement.getBoundingClientRect();
+    mouse.x = ((event.clientX-rect.left)/rect.width)*2-1;
+    mouse.y = -((event.clientY-rect.top)/rect.height)*2+1;
+    raycaster.setFromCamera(mouse, camera);
+    const intersects = raycaster.intersectObjects(nodeMeshes.filter(m => m.visible));
+    if (intersects.length > 0) {
+      draggedNode = intersects[0].object;
+      dragMoved = false;
+      dragStartPos = { x: event.clientX, y: event.clientY };
+      controls.enabled = false;
+      renderer.domElement.style.cursor = 'grabbing';
+    }
+  }
+
+  function onMouseMove(event) {
+    if (draggedNode) {
+      const dx = event.clientX - dragStartPos.x, dy = event.clientY - dragStartPos.y;
+      if (!dragMoved && Math.hypot(dx, dy) > 4) dragMoved = true;
+      if (dragMoved) {
+        const world = screenToWorld(event);
+        draggedNode.position.set(world.x, world.y, 0);
+        const idx = nodeMeshes.indexOf(draggedNode);
+        if (glowPoints && idx >= 0) { const arr = glowPoints.geometry.attributes.position.array; arr[idx*3]=world.x; arr[idx*3+1]=world.y; glowPoints.geometry.attributes.position.needsUpdate = true; }
+        const lbl = nodeLabels.find(l => l.userData.nodeId === draggedNode.userData.id);
+        if (lbl) lbl.position.set(world.x, world.y + draggedNode.userData.size + 4, 1);
+        rebuildEdgeGeometry();
+      }
+      return;
+    }
+    const rect = renderer.domElement.getBoundingClientRect();
+    mouse.x = ((event.clientX-rect.left)/rect.width)*2-1;
+    mouse.y = -((event.clientY-rect.top)/rect.height)*2+1;
+    raycaster.setFromCamera(mouse, camera);
+    const intersects = raycaster.intersectObjects(nodeMeshes.filter(m => m.visible));
+    if (intersects.length > 0) {
+      const node = intersects[0].object;
+      if (hoveredNode !== node) { if (hoveredNode) hoveredNode.material.opacity = 1.0; hoveredNode = node; hoveredNode.material.opacity = 1.5; tooltip.style.display = 'block'; tooltip.textContent = node.userData.name || node.userData.id; }
+      tooltip.style.left = (event.clientX + 12) + 'px';
+      tooltip.style.top = (event.clientY + 12) + 'px';
+      renderer.domElement.style.cursor = 'pointer';
+    } else {
+      if (hoveredNode) { hoveredNode.material.opacity = 1.0; hoveredNode = null; }
+      tooltip.style.display = 'none';
+      renderer.domElement.style.cursor = 'grab';
+    }
+  }
+
+  function onMouseUp() {
+    if (draggedNode) {
+      if (!dragMoved) showPanel(draggedNode.userData.id);
+      draggedNode = null; dragMoved = false;
+      controls.enabled = true;
+      renderer.domElement.style.cursor = 'grab';
+    }
+  }
+
+  function createStarField() {
+    const count = 1500;
+    const geo = new THREE.BufferGeometry();
+    const positions = new Float32Array(count * 3), colors = new Float32Array(count * 3);
+    for (let i = 0; i < count; i++) {
+      const r = 200 + Math.random() * 1800, a = Math.random() * Math.PI * 2;
+      positions[i*3] = Math.cos(a)*r; positions[i*3+1] = Math.sin(a)*r; positions[i*3+2] = (Math.random()-0.5)*50;
+      const intensity = 0.3 + Math.random() * 0.7, tint = Math.random();
+      if (tint < 0.6) { colors[i*3]=intensity; colors[i*3+1]=intensity; colors[i*3+2]=intensity; }
+      else if (tint < 0.85) { colors[i*3]=intensity*0.7; colors[i*3+1]=intensity*0.85; colors[i*3+2]=intensity; }
+      else { colors[i*3]=intensity; colors[i*3+1]=intensity*0.8; colors[i*3+2]=intensity*0.5; }
+    }
+    geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    starField = new THREE.Points(geo, new THREE.PointsMaterial({ size: 1.2, vertexColors: true, transparent: true, opacity: 0.6, sizeAttenuation: true, blending: THREE.AdditiveBlending }));
+    scene.add(starField);
+  }
+
+  function createDustField() {
+    const count = 400;
+    const geo = new THREE.BufferGeometry();
+    const positions = new Float32Array(count * 3), colors = new Float32Array(count * 3);
+    for (let i = 0; i < count; i++) {
+      const r = 30 + Math.random() * 400, a = Math.random() * Math.PI * 2;
+      positions[i*3] = Math.cos(a)*r; positions[i*3+1] = Math.sin(a)*r; positions[i*3+2] = (Math.random()-0.5)*10;
+      const intensity = 0.05 + Math.random() * 0.1;
+      colors[i*3]=intensity*0.6; colors[i*3+1]=intensity*0.7; colors[i*3+2]=intensity;
+    }
+    geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    dustField = new THREE.Points(geo, new THREE.PointsMaterial({ size: 8, vertexColors: true, transparent: true, opacity: 0.4, sizeAttenuation: true, blending: THREE.AdditiveBlending, depthWrite: false }));
+    scene.add(dustField);
+  }
+
+  // Init
+  const container = document.getElementById('cy');
+  scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x000005);
+  camera = new THREE.PerspectiveCamera(50, container.clientWidth / container.clientHeight, 0.1, 5000);
+  camera.position.set(0, 0, 400);
+
+  try {
+    renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+  } catch (e) {
+    container.innerHTML = '<div style="color:#aaccff;padding:2rem">WebGL not available.</div>';
+    throw e;
+  }
+  renderer.setSize(container.clientWidth, container.clientHeight);
+  renderer.setPixelRatio(window.devicePixelRatio);
+  container.appendChild(renderer.domElement);
+
+  controls = new OrbitControls(camera, renderer.domElement);
+  controls.enableDamping = true;
+  controls.dampingFactor = 0.08;
+  controls.enableRotate = false;
+  controls.enablePan = true;
+  controls.mouseButtons = { LEFT: THREE.MOUSE.PAN, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.PAN };
+  controls.touches = { ONE: THREE.TOUCH.PAN, TWO: THREE.TOUCH.DOLLY_PAN };
+
+  raycaster = new THREE.Raycaster();
+  mouse = new THREE.Vector2();
+
+  renderer.domElement.addEventListener('mousedown', onMouseDown);
+  renderer.domElement.addEventListener('mousemove', onMouseMove);
+  renderer.domElement.addEventListener('mouseup', onMouseUp);
+  window.addEventListener('mouseup', onMouseUp);
+  window.addEventListener('resize', () => {
+    camera.aspect = container.clientWidth / container.clientHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(container.clientWidth, container.clientHeight);
+  });
+
+  createStarField();
+  createDustField();
+  buildGalaxy(MOCK_GRAPH);
+
+  const info = document.createElement('div');
+  info.id = 'galaxy-info';
+  info.textContent = 'Drag a star to reposition · Drag empty space to pan · Scroll to zoom · Click for details';
+  document.body.appendChild(info);
+
+  let frame = 0, lastLabelScale = -1;
+  function animate() {
+    requestAnimationFrame(animate);
+    controls.update();
+    frame++;
+    if (starField && frame % 6 === 0) starField.material.opacity = 0.5 + Math.sin(frame * 0.02) * 0.1;
+    if (dustField) dustField.rotation.z += 0.0003;
+    const camDist = camera.position.distanceTo(controls.target);
+    const distScale = Math.max(0.5, Math.min(2.5, camDist / 250));
+    if (Math.abs(distScale - lastLabelScale) > 0.01) {
+      lastLabelScale = distScale;
+      for (const lbl of nodeLabels) {
+        if (!lbl.visible) continue;
+        lbl.scale.set(lbl.material.map.image.width * 0.12 * distScale, lbl.material.map.image.height * 0.12 * distScale, 1);
+      }
+    }
+    renderer.render(scene, camera);
+  }
+  animate();
+
+  // Fade out banner after 3s
+  setTimeout(() => banner.classList.add('fade'), 3000);
+  setTimeout(() => banner.style.display = 'none', 3700);
+  </script>
+</body>
+</html>
