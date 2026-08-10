@@ -3,10 +3,6 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"os"
-	"path/filepath"
-	"strings"
-	"time"
 )
 
 // mcpToolCallParams is the params for a tools/call request.
@@ -25,68 +21,89 @@ func handleMCPToolsList(msg *jsonrpcMessage) jsonrpcMessage {
 }
 
 // getMCPTools returns the tool definitions for tools/list.
+// Every CLI command (except daemons: serve, watch, mcp) has a corresponding MCP tool.
 func getMCPTools() []mcpToolDef {
 	return []mcpToolDef{
-		{
-			Name:        "memgraph_projects",
-			Description: "List all project scopes across all repos with names, memory counts, and paths. Use this first if you don't know what projects exist.",
-			InputSchema: json.RawMessage(`{"type":"object","properties":{},"required":[]}`),
-		},
-		{
-			Name:        "memgraph_recall",
-			Description: "Search memories by query. Returns a compact section index by default (slug + preview + line range) — use memgraph_read to fetch full content or a specific section. Supports phrases (\"quoted\"), exclusions (-term), prefixes (term*), and field filters (project:name, type:project, tags:a,b).",
-			InputSchema: json.RawMessage(`{
-				"type":"object",
-				"properties":{
-					"query":{"type":"string","description":"Search query"},
-					"project":{"type":"string","description":"Project name (resolves via registry, works from any dir)"},
-					"tags":{"type":"array","items":{"type":"string"},"description":"Filter by tags (AND)"},
-					"limit":{"type":"integer","description":"Max results","default":10},
-					"format":{"type":"string","enum":["index","full","paths"],"default":"index","description":"Output format: index (section previews), full (complete content), paths (file paths + line ranges)"}
-				},
-				"required":["query"]
-			}`),
-		},
-		{
-			Name:        "memgraph_read",
-			Description: "Read a full memory or a specific section by slug. Use memgraph_recall first to get the memory ID and available section slugs.",
-			InputSchema: json.RawMessage(`{
-				"type":"object",
-				"properties":{
-					"id":{"type":"string","description":"Memory ID"},
-					"slug":{"type":"string","description":"Section slug (optional — omit for full memory with section index)"},
-					"project":{"type":"string","description":"Project name (if memory is in a different scope)"}
-				},
-				"required":["id"]
-			}`),
-		},
-		{
-			Name:        "memgraph_save",
-			Description: "Store a new memory. Use [slug] markers to split multi-fact memories into addressable sections — agents can retrieve individual sections instead of dumping the whole memory.",
-			InputSchema: json.RawMessage(`{
-				"type":"object",
-				"properties":{
-					"text":{"type":"string","description":"Memory content (supports [slug] section markers)"},
-					"project":{"type":"string","description":"Project name"},
-					"type":{"type":"string","enum":["user","feedback","project","reference"],"default":"user","description":"Memory type"},
-					"tags":{"type":"array","items":{"type":"string"},"description":"Tags for categorization"}
-				},
-				"required":["text"]
-			}`),
-		},
-		{
-			Name:        "memgraph_recommend",
-			Description: "Get skill recommendations ranked by relevance to a task description. Returns skills with file_path, score, and related skills.",
-			InputSchema: json.RawMessage(`{
-				"type":"object",
-				"properties":{
-					"task":{"type":"string","description":"Task description"},
-					"limit":{"type":"integer","description":"Max results","default":5}
-				},
-				"required":["task"]
-			}`),
-		},
+		// --- Memory CRUD ---
+		mcpTool("memgraph_recall",
+			"Search memories by query. Returns a compact section index by default (slug + preview + line range) — use memgraph_read to fetch full content or a specific section. Supports phrases (\"quoted\"), exclusions (-term), prefixes (term*), and field filters (project:name, type:project, tags:a,b).",
+			`{"type":"object","properties":{"query":{"type":"string","description":"Search query"},"project":{"type":"string","description":"Project name (resolves via registry, works from any dir)"},"tags":{"type":"array","items":{"type":"string"},"description":"Filter by tags (AND)"},"limit":{"type":"integer","description":"Max results","default":10},"format":{"type":"string","enum":["index","full","paths"],"default":"index","description":"Output format"}},"required":["query"]}`),
+		mcpTool("memgraph_read",
+			"Read a full memory or a specific section by slug. Use memgraph_recall first to get the memory ID and available section slugs.",
+			`{"type":"object","properties":{"id":{"type":"string","description":"Memory ID"},"slug":{"type":"string","description":"Section slug (optional — omit for full memory with section index)"},"project":{"type":"string","description":"Project name (if memory is in a different scope)"}},"required":["id"]}`),
+		mcpTool("memgraph_save",
+			"Store a new memory. Use [slug] markers to split multi-fact memories into addressable sections — agents can retrieve individual sections instead of dumping the whole memory.",
+			`{"type":"object","properties":{"text":{"type":"string","description":"Memory content (supports [slug] section markers)"},"project":{"type":"string","description":"Project name"},"type":{"type":"string","enum":["user","feedback","project","reference"],"default":"user","description":"Memory type"},"tags":{"type":"array","items":{"type":"string"},"description":"Tags for categorization"}},"required":["text"]}`),
+		mcpTool("memgraph_list",
+			"List all memories in a project (no search query — browse mode). Filter by project, session, or tags. Sorted by creation date (newest first).",
+			`{"type":"object","properties":{"project":{"type":"string","description":"Project name"},"session":{"type":"string","description":"Filter by session ID"},"tags":{"type":"array","items":{"type":"string"},"description":"Filter by tags (AND)"},"limit":{"type":"integer","description":"Max results","default":50}},"required":[]}`),
+		mcpTool("memgraph_edit",
+			"Edit an existing memory's content. Can also update type, project, session, and tags.",
+			`{"type":"object","properties":{"id":{"type":"string","description":"Memory ID to edit"},"text":{"type":"string","description":"New content (supports [slug] section markers)"},"project":{"type":"string","description":"Update project name"},"type":{"type":"string","enum":["user","feedback","project","reference"],"description":"Update memory type"},"tags":{"type":"array","items":{"type":"string"},"description":"Update tags"},"session":{"type":"string","description":"Update session ID"}},"required":["id","text"]}`),
+		mcpTool("memgraph_delete",
+			"Delete a memory by ID. Cannot be undone.",
+			`{"type":"object","properties":{"id":{"type":"string","description":"Memory ID to delete"},"project":{"type":"string","description":"Project name (if memory is in a different scope)"}},"required":["id"]}`),
+		mcpTool("memgraph_sessions",
+			"List all sessions in the current or specified project with memory counts and last activity.",
+			`{"type":"object","properties":{"project":{"type":"string","description":"Project name"}},"required":[]}`),
+		mcpTool("memgraph_import",
+			"Import memories from a JSON array or JSONL string. Each record: {text, type, project, session, tags, created, name, description}.",
+			`{"type":"object","properties":{"data":{"type":"string","description":"JSON array or JSONL string of memory records"},"project":{"type":"string","description":"Override project for all imported records"},"type":{"type":"string","enum":["user","feedback","project","reference"],"description":"Override type for all imported records"}},"required":["data"]}`),
+		mcpTool("memgraph_init",
+			"Initialize the memory directory for the current or specified project. Creates the memory dir and MEMORY.md index file.",
+			`{"type":"object","properties":{"project":{"type":"string","description":"Project name to initialize"}},"required":[]}`),
+
+		// --- System / Discovery ---
+		mcpTool("memgraph_projects",
+			"List all project scopes across all repos with names, memory counts, and paths. Use this first if you don't know what projects exist.",
+			`{"type":"object","properties":{},"required":[]}`),
+		mcpTool("memgraph_profile",
+			"Show statistics for a project: total memories, breakdown by type/project/session, top tags, recent activity (24h/7d).",
+			`{"type":"object","properties":{"project":{"type":"string","description":"Project name"},"session":{"type":"string","description":"Filter by session"}},"required":[]}`),
+		mcpTool("memgraph_status",
+			"Show memory system status: active/uninitialized, memory directory path, total memory count.",
+			`{"type":"object","properties":{"project":{"type":"string","description":"Project name"}},"required":[]}`),
+		mcpTool("memgraph_config",
+			"Show current configuration: global directory, memory directory, project root, search weights, default memory type.",
+			`{"type":"object","properties":{"project":{"type":"string","description":"Project name"}},"required":[]}`),
+		mcpTool("memgraph_attach",
+			"Register or rebind a project name in the project registry. 'register' mode: register current repo under a name. 'rebind' mode: rebind an orphaned scope to a name. 'remove' mode: unregister a name.",
+			`{"type":"object","properties":{"name":{"type":"string","description":"Project name to register/rebind/remove"},"mode":{"type":"string","enum":["register","rebind","remove"],"default":"register","description":"Operation mode"},"from_scope":{"type":"string","description":"Scope dir name to rebind (required for 'rebind' mode)"}},"required":["name"]}`),
+		mcpTool("memgraph_demo",
+			"Seed sample memories into the current or specified project. Useful for testing and demos.",
+			`{"type":"object","properties":{"project":{"type":"string","description":"Project name"}},"required":[]}`),
+		mcpTool("memgraph_bridge",
+			"Generate an agent integration file (CLAUDE.md, opencode config, or copilot config) for the current project.",
+			`{"type":"object","properties":{"agent":{"type":"string","enum":["claude-code","opencode","copilot"],"description":"Target agent framework"}},"required":["agent"]}`),
+		mcpTool("memgraph_setup",
+			"Configure a repo for agent skill discovery: updates AGENTS.md, creates Devin skill, generates bridge files.",
+			`{"type":"object","properties":{"sync_dir":{"type":"string","description":"Comma-separated directories to scan for skills"}},"required":[]}`),
+		mcpTool("memgraph_feedback",
+			"Submit feedback (bug, idea, praise, or note) to the memgraph project. Best-effort delivery.",
+			`{"type":"object","properties":{"message":{"type":"string","description":"Feedback message"},"kind":{"type":"string","enum":["bug","idea","praise","note"],"default":"note","description":"Feedback kind"},"context":{"type":"string","description":"Additional context"}},"required":["message"]}`),
+
+		// --- Skill Graph ---
+		mcpTool("memgraph_recommend",
+			"Get skill recommendations ranked by relevance to a task description. Returns skills with file_path, score, and related skills.",
+			`{"type":"object","properties":{"task":{"type":"string","description":"Task description"},"limit":{"type":"integer","description":"Max results","default":5}},"required":["task"]}`),
+		mcpTool("memgraph_query",
+			"Search the skill graph by keywords. Returns matching skills with id, name, description, project, file_path, score, type, tags, and related skills.",
+			`{"type":"object","properties":{"keywords":{"type":"string","description":"Search keywords"},"limit":{"type":"integer","description":"Max results","default":10}},"required":["keywords"]}`),
+		mcpTool("memgraph_related",
+			"Get skills connected to a given skill by graph edges (references, similar, shared-keyword). Returns the skill and its related skills.",
+			`{"type":"object","properties":{"target":{"type":"string","description":"Skill ID or name"},"limit":{"type":"integer","description":"Max results","default":10}},"required":["target"]}`),
+		mcpTool("memgraph_plans",
+			"List all indexed planning files (task_plan.md, TODO.md, PLAN.md, ROADMAP.md, etc.) from the skill graph.",
+			`{"type":"object","properties":{},"required":[]}`),
+		mcpTool("memgraph_graph_from_dir",
+			"Rebuild the skill graph by ingesting SKILL.md and .md files from specified directories. Writes memory_*.md + graph.json to the skills-graph dir.",
+			`{"type":"object","properties":{"sync_dirs":{"type":"array","items":{"type":"string"},"description":"Directories to scan for skills"},"include_plans":{"type":"boolean","default":false,"description":"Also ingest planning files (task_plan.md, TODO.md, etc.)"}},"required":["sync_dirs"]}`),
 	}
+}
+
+// mcpTool is a helper for constructing tool definitions.
+func mcpTool(name, desc, schema string) mcpToolDef {
+	return mcpToolDef{Name: name, Description: desc, InputSchema: json.RawMessage(schema)}
 }
 
 // handleMCPToolsCall dispatches a tools/call request to the appropriate tool handler.
@@ -102,20 +119,64 @@ func handleMCPToolsCall(cfg *Config, msg *jsonrpcMessage) jsonrpcMessage {
 	}
 
 	switch params.Name {
-	case "memgraph_projects":
-		return mcpToolResultFromText(mcpProjects(cfg))
+	// Memory CRUD
 	case "memgraph_recall":
 		return mcpToolResultFromText(mcpRecall(cfg, args))
 	case "memgraph_read":
 		return mcpToolResultFromText(mcpRead(cfg, args))
 	case "memgraph_save":
 		return mcpToolResultFromText(mcpSave(cfg, args))
+	case "memgraph_list":
+		return mcpToolResultFromText(mcpList(cfg, args))
+	case "memgraph_edit":
+		return mcpToolResultFromText(mcpEdit(cfg, args))
+	case "memgraph_delete":
+		return mcpToolResultFromText(mcpDelete(cfg, args))
+	case "memgraph_sessions":
+		return mcpToolResultFromText(mcpSessions(cfg, args))
+	case "memgraph_import":
+		return mcpToolResultFromText(mcpImport(cfg, args))
+	case "memgraph_init":
+		return mcpToolResultFromText(mcpInit(cfg, args))
+
+	// System / Discovery
+	case "memgraph_projects":
+		return mcpToolResultFromText(mcpProjects(cfg))
+	case "memgraph_profile":
+		return mcpToolResultFromText(mcpProfile(cfg, args))
+	case "memgraph_status":
+		return mcpToolResultFromText(mcpStatus(cfg, args))
+	case "memgraph_config":
+		return mcpToolResultFromText(mcpConfig(cfg, args))
+	case "memgraph_attach":
+		return mcpToolResultFromText(mcpAttach(cfg, args))
+	case "memgraph_demo":
+		return mcpToolResultFromText(mcpDemo(cfg, args))
+	case "memgraph_bridge":
+		return mcpToolResultFromText(mcpBridge(cfg, args))
+	case "memgraph_setup":
+		return mcpToolResultFromText(mcpSetup(cfg, args))
+	case "memgraph_feedback":
+		return mcpToolResultFromText(mcpFeedback(cfg, args))
+
+	// Skill Graph
 	case "memgraph_recommend":
 		return mcpToolResultFromText(mcpRecommend(cfg, args))
+	case "memgraph_query":
+		return mcpToolResultFromText(mcpQuery(cfg, args))
+	case "memgraph_related":
+		return mcpToolResultFromText(mcpRelated(cfg, args))
+	case "memgraph_plans":
+		return mcpToolResultFromText(mcpPlans(cfg))
+	case "memgraph_graph_from_dir":
+		return mcpToolResultFromText(mcpGraphFromDir(cfg, args))
+
 	default:
 		return mcpError(-32601, fmt.Sprintf("Unknown tool: %s", params.Name))
 	}
 }
+
+// --- Shared helpers ---
 
 // mcpError creates a JSON-RPC error response.
 func mcpError(code int, message string) jsonrpcMessage {
@@ -167,343 +228,37 @@ func resolveMCPConfig(cfg *Config, projectName string) *Config {
 	return cfg
 }
 
-// mcpProjects implements the memgraph_projects tool.
-func mcpProjects(cfg *Config) string {
-	reg := loadRegistry()
-	projectsDir := filepath.Join(getGlobalMemgraphDir(), "projects")
-	entries, err := os.ReadDir(projectsDir)
-	if err != nil {
-		return "No projects found."
-	}
-
-	// Build registry scope → name map
-	registryScopes := make(map[string]string)
-	for name, entry := range reg.Projects {
-		dir := filepath.Dir(entry.Path)
-		scope := filepath.Base(dir)
-		registryScopes[scope] = name
-	}
-
-	var lines []string
-	count := 0
-	for _, entry := range entries {
-		if !entry.IsDir() {
-			continue
-		}
-		scopeName := entry.Name()
-		memDir := filepath.Join(projectsDir, scopeName, "memory")
-		memCount := countMemoryFiles(memDir)
-
-		displayName := registryScopes[scopeName]
-		if displayName == "" {
-			displayName = inferProjectName(scopeName)
-		}
-
-		lines = append(lines, fmt.Sprintf("  %-20s  %8d memories  %s", displayName, memCount, memDir))
-		count++
-	}
-
-	if count == 0 {
-		return "No projects found."
-	}
-
-	header := fmt.Sprintf("Projects (%d):\n", count)
-	return header + strings.Join(lines, "\n") + "\n\nUse --project <name> or memgraph_recall with project param to access any scope."
+// mcpGetString extracts a string arg, returning "" if missing.
+func mcpGetString(args map[string]any, key string) string {
+	v, _ := args[key].(string)
+	return v
 }
 
-// mcpRecall implements the memgraph_recall tool.
-func mcpRecall(cfg *Config, args map[string]any) string {
-	query, _ := args["query"].(string)
-	if query == "" {
-		return "Error: query is required"
+// mcpGetInt extracts an int arg with a default, from a float64 (JSON numbers).
+func mcpGetInt(args map[string]any, key string, def int) int {
+	if v, ok := args[key].(float64); ok && v > 0 {
+		return int(v)
 	}
+	return def
+}
 
-	projectName, _ := args["project"].(string)
-	cfg = resolveMCPConfig(cfg, projectName)
-
-	format, _ := args["format"].(string)
-	if format == "" {
-		format = "index"
-	}
-
-	limit := 10
-	if l, ok := args["limit"].(float64); ok && l > 0 {
-		limit = int(l)
-	}
-
-	var tags []string
-	if tagsRaw, ok := args["tags"].([]any); ok {
-		for _, t := range tagsRaw {
-			if s, ok := t.(string); ok {
-				tags = append(tags, s)
+// mcpGetStringSlice extracts a []string from a []any arg.
+func mcpGetStringSlice(args map[string]any, key string) []string {
+	var result []string
+	if raw, ok := args[key].([]any); ok {
+		for _, v := range raw {
+			if s, ok := v.(string); ok {
+				result = append(result, s)
 			}
 		}
 	}
-
-	index, err := loadSearchIndex(cfg.MemoryDir)
-	if err != nil {
-		return "No memories found (directory not initialized)."
-	}
-
-	searchOpts := SearchOptions{
-		Project: "",
-		Tags:    tags,
-		Weights: cfg.GlobalConfig.SearchWeights,
-	}
-	// If --project was used for scope resolution, don't double-filter.
-	if !cfg.ScopeResolved {
-		searchOpts.Project = projectName
-	}
-
-	results := searchMemories(index, query, searchOpts)
-	if limit > 0 && len(results) > limit {
-		results = results[:limit]
-	}
-
-	if len(results) == 0 {
-		return fmt.Sprintf("No memories found matching: %s", query)
-	}
-
-	// Return JSON for structured consumption
-	if format == "full" {
-		data, _ := json.Marshal(map[string]any{
-			"query":   query,
-			"count":   len(results),
-			"results": results,
-		})
-		return string(data)
-	}
-
-	// index and paths formats — return compact section index as text
-	var lines []string
-	for _, result := range results {
-		lines = append(lines, fmt.Sprintf("Memory %s — %q (score: %.2f)", result.MemoryID, result.Title, result.Score))
-		for _, sec := range result.Sections {
-			lines = append(lines, fmt.Sprintf("  [%s]  L%d-%d  %q", sec.Slug, sec.LineStart, sec.LineEnd, sec.Preview))
-		}
-		lines = append(lines, "")
-	}
-	lines = append(lines, "Use memgraph_read with id and slug to read a specific section.")
-
-	return strings.Join(lines, "\n")
+	return result
 }
 
-// mcpRead implements the memgraph_read tool.
-func mcpRead(cfg *Config, args map[string]any) string {
-	id, _ := args["id"].(string)
-	if id == "" {
-		return "Error: id is required"
+// mcpGetBool extracts a bool arg with a default.
+func mcpGetBool(args map[string]any, key string, def bool) bool {
+	if v, ok := args[key].(bool); ok {
+		return v
 	}
-
-	slug, _ := args["slug"].(string)
-	projectName, _ := args["project"].(string)
-
-	cfg = resolveMCPConfig(cfg, projectName)
-
-	filePath, found := findMemoryFileByID(cfg.MemoryDir, id)
-	if !found {
-		return fmt.Sprintf("Memory %s not found", id)
-	}
-
-	data, err := os.ReadFile(filePath)
-	if err != nil {
-		return fmt.Sprintf("Failed to read memory file: %v", err)
-	}
-
-	memory := parseMemory(string(data), filepath.Base(filePath))
-
-	if slug == "" {
-		// Full memory with section index
-		data, _ := json.Marshal(map[string]any{
-			"id":       memory.ID,
-			"name":     memory.Name,
-			"type":     memory.Type,
-			"project":  memory.Project,
-			"tags":     memory.Tags,
-			"created":  memory.Created.Format(time.RFC3339),
-			"sections": memory.Sections,
-			"content":  memory.Content,
-			"file_path": filePath,
-		})
-		return string(data)
-	}
-
-	// Section read
-	var matched *Section
-	for i := range memory.Sections {
-		if memory.Sections[i].Slug == slug {
-			matched = &memory.Sections[i]
-			break
-		}
-	}
-	if matched == nil {
-		var available []string
-		for _, sec := range memory.Sections {
-			available = append(available, sec.Slug)
-		}
-		return fmt.Sprintf("Section [%s] not found. Available sections: %s", slug, strings.Join(available, ", "))
-	}
-
-	// Extract section content
-	rawLines := strings.Split(string(data), "\n")
-	contentOffset := 0
-	dashCount := 0
-	for i, line := range rawLines {
-		if strings.TrimSpace(line) == "---" {
-			dashCount++
-			if dashCount == 2 {
-				contentOffset = i + 1
-				break
-			}
-		}
-	}
-	absStart := contentOffset + matched.LineStart - 1
-	absEnd := contentOffset + matched.LineEnd
-	if absStart < 0 {
-		absStart = 0
-	}
-	if absEnd > len(rawLines) {
-		absEnd = len(rawLines)
-	}
-	sectionContent := strings.TrimSpace(strings.Join(rawLines[absStart:absEnd], "\n"))
-
-	data2, _ := json.Marshal(map[string]any{
-		"id":         memory.ID,
-		"slug":       matched.Slug,
-		"title":      matched.Title,
-		"line_start": matched.LineStart,
-		"line_end":   matched.LineEnd,
-		"file_path":  filePath,
-		"content":    sectionContent,
-	})
-	return string(data2)
-}
-
-// mcpSave implements the memgraph_save tool.
-func mcpSave(cfg *Config, args map[string]any) string {
-	text, _ := args["text"].(string)
-	if text == "" {
-		return "Error: text is required"
-	}
-
-	projectName, _ := args["project"].(string)
-	cfg = resolveMCPConfig(cfg, projectName)
-
-	memoryType, _ := args["type"].(string)
-	if memoryType == "" {
-		memoryType = cfg.GlobalConfig.DefaultMemoryType
-		if memoryType == "" {
-			memoryType = "user"
-		}
-	}
-
-	var tags []string
-	if tagsRaw, ok := args["tags"].([]any); ok {
-		for _, t := range tagsRaw {
-			if s, ok := t.(string); ok {
-				tags = append(tags, s)
-			}
-		}
-	}
-
-	// Generate memory ID (same as CLI handler)
-	memoryID := fmt.Sprintf("%d", time.Now().UTC().UnixNano())
-	filePath := filepath.Join(cfg.MemoryDir, "memory_"+memoryID+".md")
-	if err := os.MkdirAll(cfg.MemoryDir, 0755); err != nil {
-		return fmt.Sprintf("Failed to create memory directory: %v", err)
-	}
-
-	memory := Memory{
-		ID:          memoryID,
-		Name:        "Memory " + memoryID,
-		Description: text,
-		Type:        memoryType,
-		Project:     projectName,
-		Session:     "default",
-		Tags:        tags,
-		Created:     time.Now().UTC(),
-		Content:     text,
-	}
-
-	content := formatMemoryFile(memory)
-	if err := os.WriteFile(filePath, []byte(content), 0644); err != nil {
-		return fmt.Sprintf("Failed to write memory file: %v", err)
-	}
-
-	// Update search index
-	updateSearchIndex(cfg)
-
-	result, _ := json.Marshal(map[string]any{
-		"id":      memoryID,
-		"status":  "remembered",
-		"type":    memoryType,
-		"project": projectName,
-		"tags":    tags,
-	})
-	return string(result)
-}
-
-// mcpRecommend implements the memgraph_recommend tool.
-func mcpRecommend(cfg *Config, args map[string]any) string {
-	task, _ := args["task"].(string)
-	if task == "" {
-		return "Error: task is required"
-	}
-
-	limit := 5
-	if l, ok := args["limit"].(float64); ok && l > 0 {
-		limit = int(l)
-	}
-
-	// Load the skill graph
-	graph, lookup, err := loadGraphForQuery(cfg)
-	if err != nil {
-		return "No skill graph found. Run 'memgraph graph-from-dir --sync-dir <path>' to build one."
-	}
-
-	// Build related map
-	relatedMap := buildRelatedMap(graph)
-
-	// Rank nodes (graph boost on, no plans for MCP)
-	ranked := rankNodes(graph, lookup, task, limit, true, false)
-
-	if len(ranked) == 0 {
-		return fmt.Sprintf("No skills found matching: %s", task)
-	}
-
-	var results []QueryResultItem
-	for _, node := range ranked {
-		item := QueryResultItem{
-			ID:          node.ID,
-			Name:        node.Name,
-			Description: node.Description,
-			Project:     node.Project,
-			FilePath:    node.FilePath,
-			Score:       node.Score,
-			Type:        node.Type,
-			Tags:        node.Tags,
-		}
-		// Add related skills
-		if related, ok := relatedMap[node.ID]; ok {
-			for _, r := range related {
-				if rNode, ok2 := lookup[r.Target]; ok2 {
-					item.Related = append(item.Related, RelatedNode{
-						ID:       rNode.ID,
-						Name:     rNode.Name,
-						Relation: r.Relation,
-						Project:  rNode.Project,
-						FilePath: rNode.FilePath,
-					})
-				}
-			}
-		}
-		results = append(results, item)
-	}
-
-	data, _ := json.Marshal(map[string]any{
-		"task":        task,
-		"count":       len(results),
-		"recommended": results,
-	})
-	return string(data)
+	return def
 }

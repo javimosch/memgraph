@@ -75,16 +75,34 @@ func TestMCP_ToolsList(t *testing.T) {
 		t.Fatalf("failed to parse tools list: %v", err)
 	}
 
-	if len(result.Tools) != 5 {
-		t.Fatalf("expected 5 tools, got %d", len(result.Tools))
+	if len(result.Tools) != 23 {
+		t.Fatalf("expected 23 tools, got %d", len(result.Tools))
 	}
 
 	expectedTools := map[string]bool{
-		"memgraph_projects":  false,
-		"memgraph_recall":    false,
-		"memgraph_read":      false,
-		"memgraph_save":      false,
-		"memgraph_recommend": false,
+		"memgraph_recall":          false,
+		"memgraph_read":            false,
+		"memgraph_save":            false,
+		"memgraph_list":            false,
+		"memgraph_edit":            false,
+		"memgraph_delete":          false,
+		"memgraph_sessions":        false,
+		"memgraph_import":          false,
+		"memgraph_init":            false,
+		"memgraph_projects":        false,
+		"memgraph_profile":         false,
+		"memgraph_status":          false,
+		"memgraph_config":          false,
+		"memgraph_attach":          false,
+		"memgraph_demo":            false,
+		"memgraph_bridge":          false,
+		"memgraph_setup":           false,
+		"memgraph_feedback":        false,
+		"memgraph_recommend":       false,
+		"memgraph_query":           false,
+		"memgraph_related":         false,
+		"memgraph_plans":           false,
+		"memgraph_graph_from_dir":  false,
 	}
 	for _, tool := range result.Tools {
 		if _, ok := expectedTools[tool.Name]; ok {
@@ -149,6 +167,54 @@ func TestMCP_ToolsCall_MemgraphProjects(t *testing.T) {
 	}
 	if result.Content[0].Type != "text" {
 		t.Errorf("expected text content, got %s", result.Content[0].Type)
+	}
+}
+
+// TestMCP_ToolsCall_MemgraphStatus tests the memgraph_status tool.
+func TestMCP_ToolsCall_MemgraphStatus(t *testing.T) {
+	resp := sendMCPMessages(t, []string{
+		`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}}`,
+		`{"jsonrpc":"2.0","method":"notifications/initialized","params":{}}`,
+		`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"memgraph_status","arguments":{"project":"memgraph"}}}`,
+	})
+
+	lastResp := resp[len(resp)-1]
+	if lastResp.Error != nil {
+		t.Fatalf("unexpected error: %s", lastResp.Error.Message)
+	}
+
+	var result mcpToolResult
+	if err := json.Unmarshal(lastResp.Result, &result); err != nil {
+		t.Fatalf("failed to parse tool result: %v", err)
+	}
+	if result.IsError {
+		t.Fatal("expected success, got isError")
+	}
+	// Should return JSON with status field
+	if len(result.Content) == 0 || result.Content[0].Text == "" {
+		t.Fatal("expected non-empty text content")
+	}
+}
+
+// TestMCP_ToolsCall_MemgraphList tests the memgraph_list tool.
+func TestMCP_ToolsCall_MemgraphList(t *testing.T) {
+	resp := sendMCPMessages(t, []string{
+		`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}}`,
+		`{"jsonrpc":"2.0","method":"notifications/initialized","params":{}}`,
+		`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"memgraph_list","arguments":{"project":"memgraph","limit":3}}}`,
+	})
+
+	lastResp := resp[len(resp)-1]
+	if lastResp.Error != nil {
+		t.Fatalf("unexpected error: %s", lastResp.Error.Message)
+	}
+
+	var result mcpToolResult
+	if err := json.Unmarshal(lastResp.Result, &result); err != nil {
+		t.Fatalf("failed to parse tool result: %v", err)
+	}
+	if result.IsError {
+		t.Fatal("expected success, got isError")
 	}
 }
 
