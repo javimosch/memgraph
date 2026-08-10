@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Changelog - memgraph</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+  <style>
+    body { font-family: 'Inter', system-ui, sans-serif; background-color: #0a0a0b; color: #e2e8f0; }
+    h1, h2 { font-family: 'Geist', system-ui, sans-serif; }
+    .feature-card { background: #111827; border: 1px solid #1f2937; border-radius: 0.75rem; padding: 1.25rem; }
+    .tag { display: inline-block; font-size: 0.7rem; padding: 0.1rem 0.5rem; border-radius: 0.25rem; font-weight: 600; }
+    .tag-feat { background: #064e3b; color: #6ee7b7; }
+    .tag-fix { background: #7c2d12; color: #fdba74; }
+    .tag-perf { background: #1e3a8a; color: #93c5fd; }
+    .tag-refactor { background: #3b0764; color: #c4b5fd; }
+  </style>
+</head>
+<body class="bg-[#0a0a0b] min-h-screen">
+  <div class="max-w-5xl mx-auto px-6 py-16">
+    <header class="mb-16">
+      <a href="changelog.html" class="text-blue-400 hover:text-blue-300 text-sm mb-6 inline-block transition-colors">&larr; All changelogs</a>
+      <h1 class="text-5xl font-bold text-white mt-4 tracking-tight">August 2026</h1>
+      <p class="text-slate-400 mt-3 text-lg">MCP server, project registry, sectioned memories, two-tier tool design</p>
+    </header>
+
+    <div class="space-y-4">
+      <div class="feature-card border-blue-500/30">
+        <span class="tag tag-perf">perf</span>
+        <span class="text-blue-400 text-xs ml-2 font-mono">v1.8.1</span>
+        <h3 class="text-white text-lg font-semibold mt-2">Two-tier MCP tools — 53% token reduction</h3>
+        <p class="text-slate-400 text-sm mt-1">Reduced MCP tool definition overhead from 2487 tokens (23 tools) to 1158 tokens (9 tools) while maintaining 100% CLI parity. 8 core tools are always advertised individually; 15 rare operations are accessed via a single <code>memgraph_admin</code> meta-tool that takes <code>{command, args}</code>. The admin tool's <code>command</code> enum tells the LLM what's available without paying for 15 full schemas on every API call.</p>
+      </div>
+
+      <div class="feature-card border-green-500/30">
+        <span class="tag tag-feat">milestone</span>
+        <span class="text-green-400 text-xs ml-2 font-mono">v1.8.0</span>
+        <h3 class="text-white text-lg font-semibold mt-2">100% CLI↔MCP parity — all 23 commands as MCP tools</h3>
+        <p class="text-slate-400 text-sm mt-1">Every CLI command (except daemons: <code>serve</code>, <code>watch</code>, <code>mcp</code>) now has a corresponding MCP tool. Agents can do everything via MCP that they could via the CLI — no shelling out needed. 18 new tools added (5 → 23 total): <code>list</code>, <code>edit</code>, <code>delete</code>, <code>sessions</code>, <code>import</code>, <code>init</code>, <code>profile</code>, <code>status</code>, <code>config</code>, <code>attach</code>, <code>demo</code>, <code>bridge</code>, <code>setup</code>, <code>feedback</code>, <code>query</code>, <code>related</code>, <code>plans</code>, <code>graph_from_dir</code>. Code split into 4 focused files (all under 500 LOC).</p>
+      </div>
+
+      <div class="feature-card border-green-500/30">
+        <span class="tag tag-feat">feat</span>
+        <span class="text-green-400 text-xs ml-2 font-mono">v1.7.0</span>
+        <h3 class="text-white text-lg font-semibold mt-2">stdio MCP server for automatic agent discovery</h3>
+        <p class="text-slate-400 text-sm mt-1">Added <code>memgraph mcp</code> command — a stdio JSON-RPC 2.0 server implementing the MCP protocol (2025-11-25). Agents like Claude Code auto-discover memgraph's capabilities without explicit CLAUDE.md rules. Register with: <code>claude mcp add memgraph -s user -- ~/.local/bin/memgraph mcp</code>. Initial 5 tools: <code>memgraph_projects</code>, <code>memgraph_recall</code>, <code>memgraph_read</code>, <code>memgraph_save</code>, <code>memgraph_recommend</code>. Eliminates the need for CLAUDE.md rules instructing agents to use memgraph.</p>
+      </div>
+
+      <div class="feature-card border-green-500/30">
+        <span class="tag tag-feat">feat</span>
+        <span class="text-green-400 text-xs ml-2 font-mono">v1.6.0</span>
+        <h3 class="text-white text-lg font-semibold mt-2">Project registry + git remote scoping + attach command</h3>
+        <p class="text-slate-400 text-sm mt-1">Stable project identification system. Git remote URLs are now the primary scope key, with filesystem path fallback for local-only repos. A project registry (<code>~/.memgraph/projects.json</code>) maps human-readable names to memory paths. New <code>memgraph attach &lt;name&gt;</code> command registers, renames, and rebinds orphaned projects. Scope resolution order: <code>--memory-dir</code> (explicit) > <code>--project &lt;name&gt;</code> (registry) > remote-based > path-based. Backward compatible with old path-based scopes. Auto-imports existing scopes into the registry on first run.</p>
+      </div>
+
+      <div class="feature-card border-green-500/30">
+        <span class="tag tag-feat">feat</span>
+        <span class="text-green-400 text-xs ml-2 font-mono">v1.5.0</span>
+        <h3 class="text-white text-lg font-semibold mt-2">Sectioned memories + two-phase recall</h3>
+        <p class="text-slate-400 text-sm mt-1">Memories now support <code>[slug]</code> section markers that split multi-fact memories into addressable sections. <code>memgraph recall</code> returns a compact section index (slug + preview + line range) by default instead of dumping full content. Agents use <code>memgraph read &lt;id&gt; &lt;slug&gt;</code> to fetch only the section they need. Reduces token consumption by 60-90% for large memories. New <code>memgraph read</code> command for section-level retrieval. New <code>memgraph list</code> command for browse mode (no search query).</p>
+      </div>
+
+      <div class="feature-card border-blue-500/30">
+        <span class="tag tag-feat">feat</span>
+        <span class="text-blue-400 text-xs ml-2 font-mono">v1.5.0</span>
+        <h3 class="text-white text-lg font-semibold mt-2">memgraph projects — cross-repo discovery</h3>
+        <p class="text-slate-400 text-sm mt-1">New <code>memgraph projects</code> command lists all project scopes across all repos with names, memory counts, and paths. Agents use this first when they don't know what projects exist. Works from any directory — no need to be in a specific repo.</p>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
