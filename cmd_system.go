@@ -504,6 +504,7 @@ func printHelp() {
 	fmt.Println("    watch [--sync-dir <dir>] [--poll-interval <sec>]  Monitor skill dirs and auto-rebuild graph on changes")
 	fmt.Println("    plans             List indexed planning-with-files task plans (use --include-plans with graph-from-dir)")
 	fmt.Println("    feedback \"<msg>\" [-kind bug|idea|praise|note] [-context \"...\"]  Report feedback (dual-write to app + relay)")
+	fmt.Println("    mcp               Start stdio MCP server (JSON-RPC over stdin/stdout for agent frameworks)")
 	fmt.Println("    status            Show system status")
 	fmt.Println("    config            Show configuration and storage location")
 	fmt.Println("    bridge <agent>    Generate agent-specific integration")

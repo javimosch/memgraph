@@ -170,6 +170,8 @@ func main() {
 		handlePlansList(&cfg)
 	case "feedback":
 		handleFeedback(&cfg)
+	case "mcp":
+		handleMCP(&cfg)
 	default:
 		if jsonOutput {
 			errorResponse(85, "unknown_command", fmt.Sprintf("Unknown command: %s. Run 'memgraph --help' for available commands.", command), false)
