@@ -54,13 +54,13 @@ type nodeInfo struct {
 }
 
 type serverState struct {
-	mu        sync.RWMutex
-	graph     *GraphIndex
-	nodeMap   map[string]Memory
-	index     *SearchIndex
-	cfg       *Config
-	syncDirs  []string
-	lastSync  time.Time
+	mu       sync.RWMutex
+	graph    *GraphIndex
+	nodeMap  map[string]Memory
+	index    *SearchIndex
+	cfg      *Config
+	syncDirs []string
+	lastSync time.Time
 }
 
 func expandHomeDir(path string) string {
@@ -200,12 +200,12 @@ func handleServe(cfg *Config) {
 	}
 
 	state := &serverState{
-		graph:     graph,
-		nodeMap:   nodeMap,
-		index:     index,
-		cfg:       cfg,
-		syncDirs:  syncDirs,
-		lastSync:  time.Now().UTC().Add(-24 * time.Hour),
+		graph:    graph,
+		nodeMap:  nodeMap,
+		index:    index,
+		cfg:      cfg,
+		syncDirs: syncDirs,
+		lastSync: time.Now().UTC().Add(-24 * time.Hour),
 	}
 
 	if len(syncDirs) > 0 {
@@ -228,6 +228,7 @@ func handleServe(cfg *Config) {
 	}
 
 	mux := http.NewServeMux()
+	registerGuideRoutes(mux)
 	mux.HandleFunc("/api/graph", func(w http.ResponseWriter, r *http.Request) {
 		state.mu.RLock()
 		g := state.graph
