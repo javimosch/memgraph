@@ -8,7 +8,7 @@
 
 Features a phyllotaxis-spiral visual knowledge graph explorer, automatic skills folder synchronization, TF-IDF + semantic graph linking, and agent-agnostic memory persistence.
 
-> **Status:** v1.4.0 — stable public API. 34 automated tests (graph build, query scoring, ranking order, serve API JSON-error contract, end-to-end ingest, memory write) run with `-race` on every push; CI is green on `master`. The CLI flags, JSON output shapes, and ranking weights are frozen as of v1.4.0.
+> **Status:** v1.9.0 — stable public API. Automated tests cover graph build, query scoring, ranking order, guide/catalog discovery, serve API JSON-error contracts, end-to-end ingest, and memory writes with `-race` on every push.
 
 ## Integrations
 
@@ -54,7 +54,7 @@ memgraph also discovers plans from **any** framework — `TODO.md`, `PLAN.md`, `
 ## Features
 
 - **Galaxy Visualization**: Interactive Via Lactea star map (`memgraph serve`) — spiral arm layout, draggable stars, search, edge toggles.
-- **Agent-First CLI**: `memgraph query`, `memgraph related`, `memgraph recommend` — search the graph and get skill recommendations for any task, with JSON output for agent consumption.
+- **Agent-First CLI**: `memgraph guide`, `memgraph help-json`, `memgraph query`, `memgraph related`, `memgraph recommend` — learn the tool, discover commands, search the graph, and get skill recommendations with JSON output for agent consumption.
 - **Copy Visible Paths**: Filter skills (e.g. search "rbm20"), hit `ENTER`, then copy all visible file paths to share directly with your agent.
 - **Auto-Sync**: `--sync-dir` monitors any directory and updates the knowledge graph in real-time. Comma-separated multiple directories supported.
 - **Watch Mode**: `memgraph watch` monitors skill directories and auto-rebuilds the graph on file changes — no more stale graphs. Polls every 4 seconds by default.
@@ -62,6 +62,22 @@ memgraph also discovers plans from **any** framework — `TODO.md`, `PLAN.md`, `
 - **Plan File Discovery**: Index task plans, TODOs, and roadmaps from any planning framework — not just [planning-with-files](https://github.com/OthmanAdi/planning-with-files). Built-in patterns cover `task_plan.md`, `TODO.md`, `PLAN.md`, `ROADMAP.md`, `docs/plan/*.md`, `docs/plans/*.md`. Auto-detect heuristic catches any `.md` file with phase/checkbox structure. Custom patterns via `~/.memgraph/plan-patterns.json`. `memgraph recommend --include-plans` returns relevant past plans alongside skills.
 - **Centralized Storage**: All memories stored in `~/.memgraph/` with git-based project scoping.
 - **Agent Integration**: Works seamlessly with Claude Code, OpenCode, Copilot, and SuperCLI.
+
+## Agent guide
+
+Start with the embedded manual—no repository checkout or network is required:
+
+```bash
+memgraph guide                 # structured JSON mental model
+memgraph guide --human         # readable Markdown rendering
+memgraph help-json             # machine-readable command catalog
+curl -s http://127.0.0.1:8080/guide
+curl -s http://127.0.0.1:8080/llms.txt
+```
+
+The guide explains the memory/graph model, canonical workflow, command groups,
+examples, and operational gotchas. `help-json` is the catalog; `guide` is the
+mental model.
 
 ## Installation
 

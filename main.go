@@ -63,6 +63,14 @@ func main() {
 		handleVersion()
 		return
 	}
+	if command == "guide" {
+		handleGuide(commandTail(os.Args, command))
+		return
+	}
+	if command == "help-json" {
+		handleHelpJSON()
+		return
+	}
 
 	// Intercept --help/-h as a subcommand argument (e.g. "memgraph recall --help")
 	// so it doesn't get treated as a query or memory ID.
@@ -181,4 +189,16 @@ func main() {
 		}
 		os.Exit(85)
 	}
+}
+
+func commandTail(args []string, command string) []string {
+	for i, arg := range args {
+		if arg == command {
+			if i+1 >= len(args) {
+				return nil
+			}
+			return args[i+1:]
+		}
+	}
+	return nil
 }

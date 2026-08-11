@@ -1,5 +1,11 @@
 # AGENTS.md — memgraph
 
+## Agent-first discovery
+- `memgraph guide` emits the embedded cli-guide-spec JSON mental model; `--human` renders Markdown.
+- `memgraph help-json` emits the complete machine-readable command catalog.
+- The HTTP server exposes the same guide at `GET /guide` and a short breadcrumb at `GET /llms.txt`.
+- These discovery commands must work offline before config, registry, or memory-store loading.
+
 ## Build & Run
 ```bash
 go build -o memgraph .
