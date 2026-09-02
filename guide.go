@@ -88,6 +88,18 @@ func guideData() map[string]interface{} {
 				"do":   []string{"memgraph serve --sync-dir ~/.agents/skills --port 8080", "curl -s http://127.0.0.1:8080/api/search?q=proxmox", "memgraph mcp"},
 			},
 		},
+		"content_discipline": map[string]interface{}{
+			"principle": "Memorize what the code CANNOT tell you — decisions, abandoned approaches, gotchas, cross-codebase relationships. Do not duplicate what the code already says (file structure, function signatures, step-by-step flow).",
+			"four_question_gate": []string{
+				"Could an agent discover this by reading the code? (1-2 files = don't save; 5+ across repos = save the insight)",
+				"Will this be true in 6 months? (code structure = stale; decisions/gotchas = durable)",
+				"Did this cost real time to discover? (obvious = no; debugging/experimentation = yes)",
+				"Is this about WHY, not WHAT? (why = save; what = read the code)",
+			},
+			"belongs":    []string{"decisions and rationale", "abandoned approaches (deleted branches, rejected designs)", "gotchas that cost real debugging time", "cross-codebase relationships no single repo shows", "non-obvious failure modes", "invisible historical context"},
+			"does_not_belong": []string{"file listings (use ls)", "function signatures (read the code)", "step-by-step code flow (read the code)", "config values visible in config files", "anything discoverable by reading 1-2 files"},
+			"full_guide": "https://github.com/javimosch/memgraph/blob/master/.agents/skills/memgraph-content-discipline/SKILL.md",
+		},
 		"gotchas": []string{
 			"`guide` and `help-json` are safe cold-start commands; other commands may require an initialized memory directory or indexed graph.",
 			"`--json` changes the output format but does not make a failed command successful; semantic error exits remain actionable.",
@@ -213,6 +225,16 @@ Important defaults
 - Git metadata selects project scope unless --project or --memory-dir overrides it.
 - serve is an HTTP/API process; watch polls directories every four seconds.
 - guide is embedded and works offline; it never fetches documentation.
+
+Content discipline (before every memgraph remember)
+Memorize what the code CANNOT tell you — decisions, abandoned approaches,
+gotchas, cross-codebase relationships. Do not duplicate what the code
+already says. Before saving, run the 4-question gate:
+1. Could an agent discover this by reading 1-2 files? If yes, don't save.
+2. Will this be true in 6 months? Code structure goes stale; decisions don't.
+3. Did this cost real time to discover? If obvious, don't memorialize it.
+4. Is this about WHY, not WHAT? The what is in the code.
+Full guide: https://github.com/javimosch/memgraph/blob/master/.agents/skills/memgraph-content-discipline/SKILL.md
 
 See also: memgraph help-json, memgraph version, memgraph status
 `, Version)

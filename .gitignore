@@ -10,6 +10,13 @@ memgraph
 memgraph-*
 sm
 
+# .agents/skills/ contains agent skills that ship with the repo — not binaries
+# Negate the memgraph-* match for the skill directory name
+!.agents/
+!.agents/skills/
+!.agents/skills/memgraph-content-discipline/
+!.agents/skills/memgraph-content-discipline/**
+
 # Test binary, built with `go test -c`
 *.test
 
