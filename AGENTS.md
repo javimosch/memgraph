@@ -38,6 +38,34 @@ No default sync directory. The user must pass `--sync-dir`. Multiple comma-separ
 - **Auto-sync polls every 4 seconds** by checking file modification times. Not a filesystem watcher (portability)
 - **`--auto-sync` flag still exists** in `utils.go` but no longer picks a default directory. Sync activates when `--sync-dir` is provided or `auto_sync_dir` is set in config
 
+### Verification & Governance
+- **`verify` is report-only by default and offline by default.** Writing (`--mark`)
+  and the network (`--net`) are both opt-in. Do not flip either default: this runs
+  over ~1,900 memories across 43 scopes, where a blip would demote true memories
+  en masse.
+- **Staleness needs positive evidence.** `verdictStale` is only ever returned for
+  a path whose parent exists *under the current user's home*, or a definitive
+  404/410. Everything ambiguous is `verdictUnknown`. Widening this was tried and
+  reverted: allowing any existing parent produced 75 false positives out of 380
+  memories in the `system` scope, because `/etc/systemd/system` exists on every box
+  while the memory was describing dk1 or rbm21.
+- **`hasRemoteContext` discounts path claims** in any memory mentioning
+  ssh/scp/rsync/rcx/remotecmd/pct/docker exec/`user@host`/an IPv4. Those paths live
+  on a filesystem this process cannot see.
+- **Paths ending in `-` or `_` are dropped** as truncated template fragments
+  (`chromium-<version>` cut at the placeholder), not reported as missing files.
+- **`formatMemoryFile` must stay idempotent.** It trims the body's surrounding
+  newlines because `parseMemory` keeps the blank line after the frontmatter; without
+  the trim every rewrite grows the file. `verify --mark` on a cron rewrites the same
+  files forever, so this is load-bearing — `TestMarkMemoryRoundTripsThroughFrontmatter`
+  guards it.
+- **The ledger is written before the mutation, never after.** `supersede` and
+  `delete` both refuse to proceed if `appendLedger` fails: an action whose record
+  was lost must not appear to have happened.
+- **Both CLI and MCP go through `verifyMemoryContent`.** Do not call
+  `extractClaims`/`checkAll` directly from a command — the two surfaces drifting
+  apart is exactly what that function exists to prevent.
+
 ### Graph Construction
 - Edges: `references` (skill mentions another by name), `similar` (TF-IDF), `shared-keyword` (overlapping tags)
 - `shared-keyword` and `similar` edges are hidden by default in the UI

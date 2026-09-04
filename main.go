@@ -144,6 +144,12 @@ func main() {
 		handleEdit(&cfg)
 	case "delete", "forget":
 		handleDelete(&cfg)
+	case "verify":
+		handleVerify(&cfg)
+	case "supersede":
+		handleSupersede(&cfg)
+	case "ledger":
+		handleLedger(&cfg)
 	case "status":
 		handleStatus(&cfg)
 	case "config":

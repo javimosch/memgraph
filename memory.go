@@ -73,6 +73,28 @@ func parseMemory(content, filename string) Memory {
 				if tag != "" {
 					memory.Tags = append(memory.Tags, tag)
 				}
+			} else if strings.HasPrefix(line, "stale:") {
+				value := strings.TrimSpace(strings.TrimPrefix(line, "stale:"))
+				memory.Stale = value == "true"
+				inTagsList = false
+			} else if strings.HasPrefix(line, "verified:") {
+				value := strings.TrimSpace(strings.TrimPrefix(line, "verified:"))
+				if timestamp, err := time.Parse(time.RFC3339, value); err == nil {
+					memory.Verified = timestamp
+				}
+				inTagsList = false
+			} else if strings.HasPrefix(line, "superseded_by:") {
+				memory.SupersededBy = strings.TrimSpace(strings.TrimPrefix(line, "superseded_by:"))
+				inTagsList = false
+			} else if strings.HasPrefix(line, "superseded_at:") {
+				value := strings.TrimSpace(strings.TrimPrefix(line, "superseded_at:"))
+				if timestamp, err := time.Parse(time.RFC3339, value); err == nil {
+					memory.SupersededAt = timestamp
+				}
+				inTagsList = false
+			} else if strings.HasPrefix(line, "superseded_reason:") {
+				memory.SupersededReason = strings.TrimSpace(strings.TrimPrefix(line, "superseded_reason:"))
+				inTagsList = false
 			} else if strings.HasPrefix(line, "created:") {
 				value := strings.TrimSpace(strings.TrimPrefix(line, "created:"))
 				if timestamp, err := time.Parse(time.RFC3339, value); err == nil {
@@ -138,7 +160,7 @@ func parseSections(content string) []Section {
 			end = len(lines)
 		}
 		// Section content for preview/title.
-		sectionLines := lines[pos.idx : end]
+		sectionLines := lines[pos.idx:end]
 		sectionText := strings.TrimSpace(strings.Join(sectionLines, "\n"))
 		title := strings.TrimSpace(pos.rest)
 		if title == "" {
@@ -245,15 +267,34 @@ func formatMemoryFile(memory Memory) string {
 		linksLine = formatLinksValue(memory) + "\n"
 	}
 
+	// Verification and supersession keys are written only when set, so a
+	// memory that has never been verified keeps its original bytes.
+	extras := ""
+	if memory.Stale {
+		extras += "stale: true\n"
+	}
+	if !memory.Verified.IsZero() {
+		extras += fmt.Sprintf("verified: %s\n", memory.Verified.UTC().Format(time.RFC3339))
+	}
+	if memory.SupersededBy != "" {
+		extras += fmt.Sprintf("superseded_by: %s\n", sanitizeYAMLValue(memory.SupersededBy))
+	}
+	if !memory.SupersededAt.IsZero() {
+		extras += fmt.Sprintf("superseded_at: %s\n", memory.SupersededAt.UTC().Format(time.RFC3339))
+	}
+	if memory.SupersededReason != "" {
+		extras += fmt.Sprintf("superseded_reason: %s\n", sanitizeYAMLValue(memory.SupersededReason))
+	}
+
 	return fmt.Sprintf(`---
 name: %s
 description: %s
 type: %s
 %s%s%s%s%screated: %s
----
+%s---
 
 %s
-`, sanitizeYAMLValue(memory.Name), sanitizeYAMLValue(memory.Description), sanitizeYAMLValue(memory.Type), sessionLine, projectLine, filePathLine, tagsLine, linksLine, memory.Created.UTC().Format(time.RFC3339), memory.Content)
+`, sanitizeYAMLValue(memory.Name), sanitizeYAMLValue(memory.Description), sanitizeYAMLValue(memory.Type), sessionLine, projectLine, filePathLine, tagsLine, linksLine, memory.Created.UTC().Format(time.RFC3339), extras, strings.Trim(memory.Content, "\n"))
 }
 
 func findMemoryFileByID(memoryPath, memoryID string) (string, bool) {

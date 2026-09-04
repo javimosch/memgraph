@@ -231,11 +231,11 @@ func handleProfile(cfg *Config) {
 
 // projectScope holds info about one project memory scope (one git repo).
 type projectScope struct {
-	Name     string `json:"name"`      // human-readable name (from registry or inferred)
-	Scope    string `json:"scope"`     // sanitized path or remote key (dir name)
-	Memories int    `json:"memories"`  // memory file count
-	Path     string `json:"path"`      // full path to memory dir
-	Remote   string `json:"remote"`    // remote scope key if registered, empty otherwise
+	Name     string `json:"name"`     // human-readable name (from registry or inferred)
+	Scope    string `json:"scope"`    // sanitized path or remote key (dir name)
+	Memories int    `json:"memories"` // memory file count
+	Path     string `json:"path"`     // full path to memory dir
+	Remote   string `json:"remote"`   // remote scope key if registered, empty otherwise
 }
 
 // handleProjects lists all project scopes across all repos, merging the
@@ -328,9 +328,10 @@ func handleProjects(cfg *Config) {
 // moved or deleted.
 //
 // Usage:
-//   memgraph attach <name>                    # register current repo as <name>
-//   memgraph attach <name> --from-scope <scope>  # rebind an orphaned scope
-//   memgraph attach --remove <name>           # unregister a project name
+//
+//	memgraph attach <name>                    # register current repo as <name>
+//	memgraph attach <name> --from-scope <scope>  # rebind an orphaned scope
+//	memgraph attach --remove <name>           # unregister a project name
 func handleAttach(cfg *Config, reg *ProjectRegistry) {
 	args, opts := parseCommandArgs(os.Args[2:])
 
@@ -489,7 +490,10 @@ func printHelp() {
 	fmt.Println("    list              List memories (alias: ls)")
 	fmt.Println("    sessions          List sessions with memory count and last created")
 	fmt.Println("    edit <id> <text>  Edit a memory by ID")
-	fmt.Println("    delete <id>       Delete a memory by ID (alias: forget)")
+	fmt.Println("    delete <id>       Delete a memory by ID (alias: forget); snapshotted to the ledger first")
+	fmt.Println("    verify            Check memories against reality; report stale claims (exit 90 if any)")
+	fmt.Println("    supersede <id>    Replace a memory, keeping the old belief readable")
+	fmt.Println("    ledger            Read the append-only record of supersedes and deletes")
 	fmt.Println("    profile           Show memory statistics")
 	fmt.Println("    projects          List all project scopes across all repos (discovery command)")
 	fmt.Println("    attach <name>     Register current repo (or --from-scope <scope>) as a named project")
@@ -529,6 +533,12 @@ func printHelp() {
 	fmt.Println("    --query <query>       Search query for recall/search")
 	fmt.Println("    --limit <n>           Limit recall/list results")
 	fmt.Println("    --format <fmt>        Recall output: index (section previews), full (default), paths (file+line ranges)")
+	fmt.Println("    --net                 verify: also check URLs and repos over the network (off by default)")
+	fmt.Println("    --mark                verify: write the stale flag into memory frontmatter (report-only by default)")
+	fmt.Println("    --with <id>           supersede: use an existing memory as the replacement")
+	fmt.Println("    --reason <why>        supersede/delete: recorded in the ledger")
+	fmt.Println("    --since <when>        ledger: RFC3339, YYYY-MM-DD, or a window like 7d/24h/30m")
+	fmt.Println("    --include-superseded  recall/list/verify: also show replaced memories")
 	fmt.Println("    --port <n>            Port for the serve command (default 8080)")
 	fmt.Println()
 	fmt.Println("AGENT BRIDGES:")

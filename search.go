@@ -332,6 +332,9 @@ func memorySearchResult(memoryID string, memory Memory, score float64) SearchRes
 		Created:    memory.Created.Format(time.RFC3339),
 		Sections:   memory.Sections,
 		FilePath:   memory.FilePath,
+
+		Stale:        memory.Stale,
+		SupersededBy: memory.SupersededBy,
 	}
 }
 

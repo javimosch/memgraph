@@ -75,8 +75,8 @@ func TestMCP_ToolsList(t *testing.T) {
 		t.Fatalf("failed to parse tools list: %v", err)
 	}
 
-	if len(result.Tools) != 9 {
-		t.Fatalf("expected 9 tools (8 core + 1 admin), got %d", len(result.Tools))
+	if len(result.Tools) != 10 {
+		t.Fatalf("expected 10 tools (9 core + 1 admin), got %d", len(result.Tools))
 	}
 
 	expectedTools := map[string]bool{
@@ -87,6 +87,7 @@ func TestMCP_ToolsList(t *testing.T) {
 		"memgraph_list":      false,
 		"memgraph_edit":      false,
 		"memgraph_delete":    false,
+		"memgraph_supersede": false,
 		"memgraph_recommend": false,
 		"memgraph_admin":     false,
 	}

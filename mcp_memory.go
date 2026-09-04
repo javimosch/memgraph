@@ -332,6 +332,21 @@ func mcpDelete(cfg *Config, args map[string]any) string {
 		return fmt.Sprintf("Memory %s not found", id)
 	}
 
+	// Snapshot to the ledger before removing the file, so a deleted memory
+	// stays readable. A lost record is worse than a kept file: refuse.
+	if raw, err := os.ReadFile(memoryFile); err == nil {
+		deleted := parseMemory(string(raw), filepath.Base(memoryFile))
+		entry := LedgerEntry{
+			Action:   "delete",
+			MemoryID: deleted.ID,
+			Reason:   mcpGetString(args, "reason"),
+			Snapshot: snapshotOf(deleted),
+		}
+		if err := appendLedger(cfg, entry); err != nil {
+			return fmt.Sprintf("Cannot append to ledger, refusing to delete: %v", err)
+		}
+	}
+
 	if err := os.Remove(memoryFile); err != nil {
 		return fmt.Sprintf("Cannot delete memory file: %v", err)
 	}

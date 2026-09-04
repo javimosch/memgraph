@@ -135,7 +135,7 @@ func handleRecall(cfg *Config) {
 	}
 
 	if query == "" {
-		results := listAllMemories(index, searchOpts.Project, searchOpts.Session, searchOpts.Tags, opts.Limit)
+		results := listAllMemories(index, searchOpts.Project, searchOpts.Session, searchOpts.Tags, opts.Limit, opts.IncludeSuperseded)
 		if format == "index" || format == "paths" {
 			printSectionIndex(results, cfg.MemoryDir, format)
 		} else {
@@ -156,6 +156,7 @@ func handleRecall(cfg *Config) {
 	}
 
 	results := searchMemories(index, query, searchOpts)
+	results = filterSuperseded(results, opts.IncludeSuperseded)
 	if opts.Limit > 0 && len(results) > opts.Limit {
 		results = results[:opts.Limit]
 	}
@@ -192,7 +193,7 @@ func handleRecall(cfg *Config) {
 	}
 }
 
-func listAllMemories(index *SearchIndex, project, session string, tags []string, limit int) []SearchResult {
+func listAllMemories(index *SearchIndex, project, session string, tags []string, limit int, includeSuperseded bool) []SearchResult {
 	var results []SearchResult
 	for _, memory := range index.Memories {
 		if project != "" && memory.Project != project {
@@ -204,21 +205,12 @@ func listAllMemories(index *SearchIndex, project, session string, tags []string,
 		if !memoryHasAllTags(memory.Tags, tags) {
 			continue
 		}
+		if memory.SupersededBy != "" && !includeSuperseded {
+			continue
+		}
 		hoursSinceCreation := time.Since(memory.Created).Hours()
 		score := 100.0 - hoursSinceCreation
-		results = append(results, SearchResult{
-			MemoryID:   memory.ID,
-			Score:      score,
-			Title:      memory.Name,
-			Content:    memory.Content,
-			MemoryType: memory.Type,
-			Project:    memory.Project,
-			Session:    memory.Session,
-			Tags:       memory.Tags,
-			Created:    memory.Created.Format(time.RFC3339),
-			Sections:   memory.Sections,
-			FilePath:   memory.FilePath,
-		})
+		results = append(results, memorySearchResult(memory.ID, memory, score))
 	}
 	sort.Slice(results, func(i, j int) bool {
 		return results[i].Score > results[j].Score
@@ -351,14 +343,14 @@ func handleRead(cfg *Config) {
 		// Full memory
 		if jsonOutput {
 			json.NewEncoder(os.Stdout).Encode(map[string]interface{}{
-				"id":       memory.ID,
-				"name":     memory.Name,
-				"type":     memory.Type,
-				"project":  memory.Project,
-				"tags":     memory.Tags,
-				"created":  memory.Created.Format(time.RFC3339),
-				"sections": memory.Sections,
-				"content":  memory.Content,
+				"id":        memory.ID,
+				"name":      memory.Name,
+				"type":      memory.Type,
+				"project":   memory.Project,
+				"tags":      memory.Tags,
+				"created":   memory.Created.Format(time.RFC3339),
+				"sections":  memory.Sections,
+				"content":   memory.Content,
 				"file_path": filePath,
 			})
 		} else {
@@ -446,4 +438,20 @@ func handleRead(cfg *Config) {
 		fmt.Printf("File: %s (content L%d-%d)\n\n", filePath, matched.LineStart, matched.LineEnd)
 		fmt.Println(strings.TrimSpace(sectionContent))
 	}
+}
+
+// filterSuperseded drops replaced beliefs from ranked recall. They stay on
+// disk and stay readable by ID — recall just stops volunteering them.
+func filterSuperseded(results []SearchResult, include bool) []SearchResult {
+	if include {
+		return results
+	}
+	filtered := results[:0]
+	for _, result := range results {
+		if result.SupersededBy != "" {
+			continue
+		}
+		filtered = append(filtered, result)
+	}
+	return filtered
 }
