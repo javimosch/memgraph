@@ -8,30 +8,37 @@ import (
 )
 
 type CommandOptions struct {
-	MemoryType  string
-	Project     string
-	ProjectSet  bool
-	Tags        []string
-	TagsSet     bool
-	TagOnly     bool
-	WeightsJSON string
-	Limit       int
-	Port        int
-	Text        string
-	TextSet     bool
-	Query       string
-	QuerySet    bool
-	Session     string
-	SessionSet  bool
-	SyncDir     string
-	AutoSync    bool
+	MemoryType   string
+	Project      string
+	ProjectSet   bool
+	Tags         []string
+	TagsSet      bool
+	TagOnly      bool
+	WeightsJSON  string
+	Limit        int
+	Port         int
+	Text         string
+	TextSet      bool
+	Query        string
+	QuerySet     bool
+	Session      string
+	SessionSet   bool
+	SyncDir      string
+	AutoSync     bool
 	PollInterval int
 	IncludePlans bool
-	Format      string
-	FormatSet   bool
+	Format       string
+	FormatSet    bool
 	FromScope    string
 	RemoveAttach bool
 	AttachName   string
+
+	Net               bool
+	Mark              bool
+	With              string
+	Reason            string
+	Since             string
+	IncludeSuperseded bool
 }
 
 func parseCommandArgs(args []string) ([]string, CommandOptions) {
@@ -206,6 +213,42 @@ func parseCommandArgs(args []string) ([]string, CommandOptions) {
 		case strings.HasPrefix(arg, "--remove="):
 			opts.RemoveAttach = true
 			opts.AttachName = strings.TrimPrefix(arg, "--remove=")
+			continue
+		case arg == "--net":
+			opts.Net = true
+			continue
+		case arg == "--mark":
+			opts.Mark = true
+			continue
+		case arg == "--include-superseded":
+			opts.IncludeSuperseded = true
+			continue
+		case arg == "--with":
+			if i+1 < len(args) && !strings.HasPrefix(args[i+1], "--") {
+				opts.With = args[i+1]
+				i++
+			}
+			continue
+		case strings.HasPrefix(arg, "--with="):
+			opts.With = strings.TrimPrefix(arg, "--with=")
+			continue
+		case arg == "--reason":
+			if i+1 < len(args) && !strings.HasPrefix(args[i+1], "--") {
+				opts.Reason = args[i+1]
+				i++
+			}
+			continue
+		case strings.HasPrefix(arg, "--reason="):
+			opts.Reason = strings.TrimPrefix(arg, "--reason=")
+			continue
+		case arg == "--since":
+			if i+1 < len(args) && !strings.HasPrefix(args[i+1], "--") {
+				opts.Since = args[i+1]
+				i++
+			}
+			continue
+		case strings.HasPrefix(arg, "--since="):
+			opts.Since = strings.TrimPrefix(arg, "--since=")
 			continue
 		case arg == "--attach-name":
 			if i+1 < len(args) && !strings.HasPrefix(args[i+1], "--") {

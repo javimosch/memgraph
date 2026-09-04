@@ -42,6 +42,9 @@ func handleList(cfg *Config) {
 		if !memoryHasAllTags(memory.Tags, opts.Tags) {
 			continue
 		}
+		if memory.SupersededBy != "" && !opts.IncludeSuperseded {
+			continue
+		}
 		memories = append(memories, memory)
 	}
 	sort.Slice(memories, func(i, j int) bool {
@@ -189,7 +192,7 @@ func handleEdit(cfg *Config) {
 }
 
 func handleDelete(cfg *Config) {
-	positional, _ := parseCommandArgs(os.Args[2:])
+	positional, opts := parseCommandArgs(os.Args[2:])
 	if len(positional) < 1 {
 		errorResponse(80, "missing_argument", "Memory ID required for delete", false)
 		os.Exit(80)
@@ -200,6 +203,23 @@ func handleDelete(cfg *Config) {
 	if !ok {
 		errorResponse(92, "memory_not_found", fmt.Sprintf("Memory with ID %s not found", memoryID), false)
 		os.Exit(92)
+	}
+
+	// Record the deletion with a snapshot first. The ledger is what lets a
+	// deleted memory still be read back, so losing the record is worse than
+	// keeping the file: refuse rather than delete unrecorded.
+	if raw, err := os.ReadFile(memoryFile); err == nil {
+		deleted := parseMemory(string(raw), filepath.Base(memoryFile))
+		entry := LedgerEntry{
+			Action:   "delete",
+			MemoryID: deleted.ID,
+			Reason:   opts.Reason,
+			Snapshot: snapshotOf(deleted),
+		}
+		if err := appendLedger(cfg, entry); err != nil {
+			errorResponse(110, "ledger_error", fmt.Sprintf("Cannot append to ledger, refusing to delete: %v", err), false)
+			os.Exit(110)
+		}
 	}
 
 	if err := os.Remove(memoryFile); err != nil {

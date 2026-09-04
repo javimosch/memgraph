@@ -45,16 +45,19 @@ func getMCPTools() []mcpToolDef {
 			"Edit an existing memory's content. Can also update type, project, session, and tags.",
 			`{"type":"object","properties":{"id":{"type":"string","description":"Memory ID to edit"},"text":{"type":"string","description":"New content (supports [slug] section markers)"},"project":{"type":"string","description":"Update project name"},"type":{"type":"string","enum":["user","feedback","project","reference"],"description":"Update memory type"},"tags":{"type":"array","items":{"type":"string"},"description":"Update tags"},"session":{"type":"string","description":"Update session ID"}},"required":["id","text"]}`),
 		mcpTool("memgraph_delete",
-			"Delete a memory by ID. Cannot be undone.",
-			`{"type":"object","properties":{"id":{"type":"string","description":"Memory ID to delete"},"project":{"type":"string","description":"Project name (if memory is in a different scope)"}},"required":["id"]}`),
+			"Delete a memory by ID. The content is snapshotted to the append-only ledger first, so it stays readable via memgraph_admin{command:\"ledger\"}. Prefer memgraph_supersede when the memory is not wrong so much as out of date.",
+			`{"type":"object","properties":{"id":{"type":"string","description":"Memory ID to delete"},"project":{"type":"string","description":"Project name (if memory is in a different scope)"},"reason":{"type":"string","description":"Why it is being deleted (recorded in the ledger)"}},"required":["id"]}`),
+		mcpTool("memgraph_supersede",
+			"Replace a memory that has become wrong or out of date, keeping the old belief readable. The old memory is hidden from recall and gains a forward pointer; the change is recorded in the append-only ledger. Use this instead of edit or delete whenever a fact CHANGED, so the trail of what was believed and when survives.",
+			`{"type":"object","properties":{"id":{"type":"string","description":"ID of the memory to supersede"},"text":{"type":"string","description":"Content of the replacement memory (inherits type/tags/project from the old one unless overridden)"},"with":{"type":"string","description":"ID of an existing memory that replaces it (alternative to text)"},"reason":{"type":"string","description":"Why the old belief no longer holds"},"type":{"type":"string","enum":["user","feedback","project","reference"],"description":"Override type of the replacement"},"tags":{"type":"array","items":{"type":"string"},"description":"Override tags of the replacement"},"project":{"type":"string","description":"Project name (if the memory is in a different scope)"}},"required":["id"]}`),
 		mcpTool("memgraph_recommend",
 			"Get skill recommendations ranked by relevance to a task description. Returns skills with file_path, score, and related skills.",
 			`{"type":"object","properties":{"task":{"type":"string","description":"Task description"},"limit":{"type":"integer","default":5}},"required":["task"]}`),
 
 		// --- Admin meta-tool (covers 15 rare operations) ---
 		mcpTool("memgraph_admin",
-			"Access less-common memgraph operations. Commands: status, config, profile, sessions, init, demo, import, attach, bridge, setup, feedback, query, related, plans, graph_from_dir. Each takes an 'args' object with command-specific parameters (same as the CLI flags).",
-			`{"type":"object","properties":{"command":{"type":"string","enum":["status","config","profile","sessions","init","demo","import","attach","bridge","setup","feedback","query","related","plans","graph_from_dir"],"description":"Admin command to run"},"args":{"type":"object","description":"Command-specific arguments (same params as the CLI flags for that command)","additionalProperties":true}},"required":["command"]}`),
+			"Access less-common memgraph operations. Commands: verify, ledger, status, config, profile, sessions, init, demo, import, attach, bridge, setup, feedback, query, related, plans, graph_from_dir. Each takes an 'args' object with command-specific parameters (same as the CLI flags).",
+			`{"type":"object","properties":{"command":{"type":"string","enum":["verify","ledger","status","config","profile","sessions","init","demo","import","attach","bridge","setup","feedback","query","related","plans","graph_from_dir"],"description":"Admin command to run"},"args":{"type":"object","description":"Command-specific arguments (same params as the CLI flags for that command)","additionalProperties":true}},"required":["command"]}`),
 	}
 }
 
@@ -91,6 +94,8 @@ func handleMCPToolsCall(cfg *Config, msg *jsonrpcMessage) jsonrpcMessage {
 		return mcpToolResultFromText(mcpEdit(cfg, args))
 	case "memgraph_delete":
 		return mcpToolResultFromText(mcpDelete(cfg, args))
+	case "memgraph_supersede":
+		return mcpToolResultFromText(mcpSupersede(cfg, args))
 	case "memgraph_recommend":
 		return mcpToolResultFromText(mcpRecommend(cfg, args))
 
@@ -205,6 +210,12 @@ func mcpAdminDispatch(cfg *Config, args map[string]any) jsonrpcMessage {
 	}
 
 	switch command {
+	// Governance
+	case "verify":
+		return mcpToolResultFromText(mcpVerify(cfg, subArgs))
+	case "ledger":
+		return mcpToolResultFromText(mcpLedger(cfg, subArgs))
+
 	// Memory — rare ops
 	case "sessions":
 		return mcpToolResultFromText(mcpSessions(cfg, subArgs))

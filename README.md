@@ -60,6 +60,8 @@ memgraph also discovers plans from **any** framework — `TODO.md`, `PLAN.md`, `
 - **Watch Mode**: `memgraph watch` monitors skill directories and auto-rebuilds the graph on file changes — no more stale graphs. Polls every 4 seconds by default.
 - **Graph-From-Dir**: Ingest any directory of `SKILL.md` or `.md` files into a relational knowledge graph (`references`, `similar`, `shared-keyword`).
 - **Plan File Discovery**: Index task plans, TODOs, and roadmaps from any planning framework — not just [planning-with-files](https://github.com/OthmanAdi/planning-with-files). Built-in patterns cover `task_plan.md`, `TODO.md`, `PLAN.md`, `ROADMAP.md`, `docs/plan/*.md`, `docs/plans/*.md`. Auto-detect heuristic catches any `.md` file with phase/checkbox structure. Custom patterns via `~/.memgraph/plan-patterns.json`. `memgraph recommend --include-plans` returns relevant past plans alongside skills.
+- **Staleness Checking**: `memgraph verify` resolves the paths, URLs, and repos a memory asserts and reports which no longer hold. Offline and report-only by default — `--net` reaches the network, `--mark` writes the flag. Exits `90` when anything is stale, so it works as a cron gate.
+- **Supersession + Ledger**: `memgraph supersede` replaces a memory that has gone out of date **without destroying what was believed** — the old memory keeps its content, gains a forward pointer, and drops out of recall. Every supersede and delete is recorded in an append-only `ledger.jsonl` with a snapshot, so a memory stays readable after the memory is gone (`memgraph ledger`).
 - **Centralized Storage**: All memories stored in `~/.memgraph/` with git-based project scoping.
 - **Agent Integration**: Works seamlessly with Claude Code, OpenCode, Copilot, and SuperCLI.
 
@@ -125,6 +127,48 @@ memgraph recall "database" --json
 # List memories
 memgraph list
 ```
+
+### 2b. Keeping Memories Honest
+
+A memory written eight months ago reads exactly like one written today. Two commands fix that.
+
+```bash
+# What no longer holds? Offline, report-only, nothing is written.
+memgraph verify --project myapp
+
+# Also check URLs and repositories, and record the verdict in frontmatter.
+memgraph verify --project myapp --net --mark
+
+# Exit code 90 means "stale memories found" — usable directly in cron.
+memgraph verify --json || test $? -eq 90
+```
+
+`verify` claims staleness only on positive evidence: a file missing from a
+directory that does exist **under your own home**, a 404, a repository that is
+gone. A timeout, an unreachable host, a `/etc` path, or a memory that mentions
+`ssh`/`rcx`/an IP is reported as `unknown` — it describes a machine this process
+cannot see. A network blip never demotes a true memory.
+
+When a fact has *changed*, supersede it instead of editing it. Editing destroys
+the record of what was believed and when; superseding keeps both.
+
+```bash
+# Replace a memory, keeping the old belief readable
+memgraph supersede 1788507903 --text "stampd retired; became comptoir product sdlt" \
+                              --reason "merged into comptoir 2026-07-29"
+
+# Point at a memory that already exists instead
+memgraph supersede 1788507903 --with 1788507904 --reason "duplicate"
+
+# Recall hides superseded memories; ask for them explicitly
+memgraph recall stampd --include-superseded
+
+# Read the append-only trail of supersedes and deletes
+memgraph ledger --since 30d
+```
+
+`delete` also writes to the ledger, snapshotting the memory first — so a deleted
+memory is still readable in `memgraph ledger --json`.
 
 ### 3. Agent Bridges
 
