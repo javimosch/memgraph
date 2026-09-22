@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.11.0 — project aliases you can rename, remove, and repair
 
 - Fixed `memgraph attach <name> --memory-dir <path>` recording the current
   directory's git remote as the project `remote` instead of the scope the
