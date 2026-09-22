@@ -2,6 +2,12 @@
 
 ## 1.11.0 — project aliases you can rename, remove, and repair
 
+- Graph explorer UI: the galaxy view is now titled "Memgraph — Galaxy" and
+  carries a `galaxy` badge, with Inter as the interface font. `graph.js`
+  drops its IIFE wrapper — the file is already an ES module, so the wrapper
+  only cost a level of indentation — and folds `init`/`initThree` into
+  module top-level. Behaviour is unchanged. The UI is embedded in the
+  binary via `go:embed`, so it ships inside this release's asset.
 - Fixed `memgraph attach <name> --memory-dir <path>` recording the current
   directory's git remote as the project `remote` instead of the scope the
   memory dir actually belongs to. The scope key is now always derived from
