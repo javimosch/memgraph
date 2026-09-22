@@ -12,6 +12,53 @@ var (
 	memoryDir     string
 )
 
+// valueFlags are the global flags that consume the following argument.
+// The command scanner must skip their values so a value is never mistaken
+// for the command. Keep in sync with the value-taking cases in
+// parseCommandArgs (utils.go).
+var valueFlags = map[string]bool{
+	"--attach-name":   true,
+	"--format":        true,
+	"--from-scope":    true,
+	"--limit":         true,
+	"--memory-dir":    true,
+	"--poll-interval": true,
+	"--port":          true,
+	"--project":       true,
+	"--query":         true,
+	"--reason":        true,
+	"--remove":        true,
+	"--session":       true,
+	"--since":         true,
+	"--sync-dir":      true,
+	"--tags":          true,
+	"--text":          true,
+	"--type":          true,
+	"--weights":       true,
+	"--with":          true,
+}
+
+// findCommand returns the first argument that is neither a flag nor a
+// flag's value — the command — and its index in args. A leading
+// --help/-h/--version/-v counts as the command so `memgraph --help` works.
+// A value flag consumes the next arg only when it doesn't look like
+// another flag, matching parseCommandArgs.
+func findCommand(args []string) (string, int) {
+	for i := 1; i < len(args); i++ {
+		arg := args[i]
+		if !strings.HasPrefix(arg, "-") {
+			return arg, i
+		}
+		if arg == "--help" || arg == "-h" || arg == "--version" || arg == "-v" {
+			return arg, i
+		}
+		if valueFlags[arg] && i+1 < len(args) && !strings.HasPrefix(args[i+1], "--") {
+			i++
+		}
+	}
+	return "", -1
+}
+
 func main() {
 	// Scan ALL args for global flags first, so jsonOutput is set
 	// before any command dispatch or error handling.
@@ -33,18 +80,7 @@ func main() {
 	}
 
 	// Find the first non-flag argument as the command
-	command := ""
-	for i := 1; i < len(os.Args); i++ {
-		arg := os.Args[i]
-		if !strings.HasPrefix(arg, "-") {
-			command = arg
-			break
-		}
-		// Skip the value for --memory-dir
-		if arg == "--memory-dir" && i+1 < len(os.Args) {
-			i++
-		}
-	}
+	command, cmdIdx := findCommand(os.Args)
 
 	if command == "" {
 		if jsonOutput {
@@ -53,6 +89,16 @@ func main() {
 			printHelp()
 		}
 		os.Exit(85)
+	}
+
+	// Normalize argv so the command always sits at index 1: handlers that
+	// parse os.Args[2:] or commandTail would otherwise lose any global
+	// flags that precede the command (`memgraph --project x recall`).
+	if cmdIdx > 1 {
+		normalized := []string{os.Args[0], command}
+		normalized = append(normalized, os.Args[1:cmdIdx]...)
+		normalized = append(normalized, os.Args[cmdIdx+1:]...)
+		os.Args = normalized
 	}
 
 	if command == "--help" || command == "-h" || command == "help" {
@@ -72,15 +118,13 @@ func main() {
 		return
 	}
 
-	// Intercept --help/-h as a subcommand argument (e.g. "memgraph recall --help")
-	// so it doesn't get treated as a query or memory ID.
-	for i := 1; i < len(os.Args); i++ {
-		if os.Args[i] == command {
-			if i+1 < len(os.Args) && (os.Args[i+1] == "--help" || os.Args[i+1] == "-h") {
-				printHelp()
-				return
-			}
-			break
+	// Intercept --help/-h after the command (e.g. "memgraph recall --help")
+	// so it doesn't get treated as a query or memory ID. The command is at
+	// index 1 after normalization, so the tail is everything past it.
+	for _, arg := range os.Args[2:] {
+		if arg == "--help" || arg == "-h" {
+			printHelp()
+			return
 		}
 	}
 

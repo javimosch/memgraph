@@ -36,6 +36,14 @@
 - Fixed `attach` parsing `os.Args[2:]` directly: a global flag before the
   command (e.g. `memgraph --json attach x`) registered the literal name
   "attach". It now parses the command tail like `detach`/`rename`.
+- Fixed command detection when a value-taking global flag precedes the
+  command: `memgraph --project aplomb config` read `aplomb` as the command
+  and exited 85. The scanner now drives off one table of value-taking
+  flags, and argv is normalized so the command always sits at index 1 —
+  flags before the command now reach handlers that parse `os.Args[2:]`.
+- Fixed `memgraph --version`/`--help`/`-v`/`-h` exiting 85: a leading
+  help/version flag now counts as the command instead of being skipped by
+  the scanner.
 - Added `memgraph detach <name> [--purge]` (alias `unregister`): removes a
   project alias from `~/.memgraph/projects.json` without touching the memory
   files. `--purge` also deletes the registered memory dir — it asks for
