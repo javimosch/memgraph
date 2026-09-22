@@ -240,9 +240,17 @@ type projectScope struct {
 }
 
 // handleProjects lists all project scopes across all repos, merging the
-// project registry (named projects) with scope dirs on disk.
+// project registry (named projects) with scope dirs on disk. With --repair
+// it instead normalizes stale remote metadata in the registry.
 func handleProjects(cfg *Config) {
+	_, opts := parseCommandArgs(commandTail(os.Args, "projects"))
 	reg := loadRegistry()
+
+	if opts.Repair {
+		repairProjects(reg)
+		return
+	}
+
 	projectsDir := filepath.Join(getGlobalMemgraphDir(), "projects")
 	entries, err := os.ReadDir(projectsDir)
 	if err != nil {
@@ -301,12 +309,17 @@ func handleProjects(cfg *Config) {
 		return scopes[i].Memories > scopes[j].Memories
 	})
 
-	// Registry inconsistencies (remote contradicts the memory dir's scope,
-	// or an alias shadows a scope dir of the same name) make --project
-	// silently write to the wrong scope — they belong in the listing (#9).
+	// Warnings are entries that can misroute a write; drift is stale
+	// remote metadata that cannot (Path alone drives resolution). Both
+	// belong in this listing — warnings so the operator sees real
+	// conflicts, drift so 'projects --repair' has something to fix (#22).
 	warnings := reg.registryWarnings()
 	if warnings == nil {
 		warnings = []string{}
+	}
+	drift := reg.registryDrift()
+	if drift == nil {
+		drift = []string{}
 	}
 
 	if jsonOutput {
@@ -314,6 +327,7 @@ func handleProjects(cfg *Config) {
 			"projects": scopes,
 			"count":    len(scopes),
 			"warnings": warnings,
+			"drift":    drift,
 		})
 		return
 	}
@@ -331,8 +345,57 @@ func handleProjects(cfg *Config) {
 	for _, w := range warnings {
 		fmt.Printf("\nWarning: %s\n", w)
 	}
+	for _, d := range drift {
+		fmt.Printf("\nDrift: %s\n", d)
+	}
+	if len(drift) > 0 {
+		fmt.Printf("\nRun 'memgraph projects --repair' to normalize stale remote metadata.\n")
+	}
 	fmt.Printf("\nUse --project <name> or --memory-dir <path> to access any scope.\n")
 	fmt.Printf("Use 'memgraph attach <name>' to register, 'detach <name>' to unregister, 'rename <old> <new>' to rename a project.\n")
+}
+
+// repairProjects normalizes stale remote metadata in the registry: any
+// entry whose recorded remote names a scope with no memory dir on disk
+// gets its remote rewritten to the memory dir's real scope — the same
+// value attach would record today (#22). Entries whose remote scope dir
+// exists are skipped and reported: both scopes are live, so picking one
+// is a decision for the operator, not a flag.
+func repairProjects(reg *ProjectRegistry) {
+	res := reg.repairRegistry()
+
+	if len(res.Repaired) > 0 {
+		if err := reg.save(); err != nil {
+			errorResponse(110, "save_error", fmt.Sprintf("Failed to save registry: %v", err), false)
+			os.Exit(110)
+		}
+	}
+
+	if jsonOutput {
+		status := "clean"
+		if len(res.Repaired) > 0 {
+			status = "repaired"
+		} else if len(res.Skipped) > 0 {
+			status = "needs_manual"
+		}
+		successResponse(map[string]any{
+			"status":   status,
+			"repaired": res.Repaired,
+			"skipped":  res.Skipped,
+		})
+		return
+	}
+
+	if len(res.Repaired) == 0 && len(res.Skipped) == 0 {
+		fmt.Println("Registry is consistent; nothing to repair.")
+		return
+	}
+	for _, name := range res.Repaired {
+		fmt.Printf("Repaired %q: remote is now %q (its memory dir's scope)\n", name, reg.Projects[name].Remote)
+	}
+	for _, name := range res.Skipped {
+		fmt.Printf("Skipped %q: scope %q also exists on disk — pick one with 'memgraph attach %s --from-scope <scope>'\n", name, reg.Projects[name].Remote, name)
+	}
 }
 
 // handleAttach registers a memory dir (the current repo's, or a given
@@ -659,7 +722,7 @@ func printHelp() {
 	fmt.Println("    supersede <id>    Replace a memory, keeping the old belief readable")
 	fmt.Println("    ledger            Read the append-only record of supersedes and deletes")
 	fmt.Println("    profile           Show memory statistics")
-	fmt.Println("    projects          List all project scopes across all repos (discovery command)")
+	fmt.Println("    projects          List all project scopes across all repos (--repair fixes stale registry metadata)")
 	fmt.Println("    attach <name>     Register current repo, --memory-dir <path>, or --from-scope <scope> as a named project")
 	fmt.Println("    detach <name>     Unregister a project alias (keeps memory files; --purge deletes them)")
 	fmt.Println("    rename <old> <new>  Rename a registered project alias in place")
@@ -704,6 +767,7 @@ func printHelp() {
 	fmt.Println("    --with <id>           supersede: use an existing memory as the replacement")
 	fmt.Println("    --reason <why>        supersede/delete: recorded in the ledger")
 	fmt.Println("    --purge               detach: also delete the memory dir (asks first; skipped with -y/--json)")
+	fmt.Println("    --repair              projects: rewrite stale remote metadata to the memory dir's real scope")
 	fmt.Println("    --since <when>        ledger: RFC3339, YYYY-MM-DD, or a window like 7d/24h/30m")
 	fmt.Println("    --include-superseded  recall/list/verify: also show replaced memories")
 	fmt.Println("    --port <n>            Port for the serve command (default 8080)")

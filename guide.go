@@ -58,7 +58,7 @@ func guideData() map[string]interface{} {
 				"memgraph sessions [--json]",
 			},
 			"projects": []string{
-				"memgraph projects [--json]",
+				"memgraph projects [--json] [--repair]",
 				"memgraph attach <name> [--from-scope <scope> | --memory-dir <path>]",
 				"memgraph detach <name> [--purge]",
 				"memgraph rename <old> <new>",
@@ -149,7 +149,7 @@ func commandCatalog() map[string]interface{} {
 			{"name": "status", "usage": "memgraph status", "summary": "show memory system status"},
 			{"name": "config", "usage": "memgraph config", "summary": "show storage and global configuration"},
 			{"name": "profile", "usage": "memgraph profile [options]", "summary": "show memory statistics"},
-			{"name": "projects", "usage": "memgraph projects", "summary": "list project scopes"},
+			{"name": "projects", "usage": "memgraph projects [--repair]", "summary": "list project scopes; --repair normalizes stale registry metadata"},
 			{"name": "attach", "usage": "memgraph attach <name> [options]", "summary": "register a named project scope"},
 			{"name": "detach", "aliases": []string{"unregister"}, "usage": "memgraph detach <name> [--purge]", "summary": "remove a project registration, keeping memory files unless --purge is given"},
 			{"name": "rename", "usage": "memgraph rename <old> <new>", "summary": "rename a registered project alias in place"},

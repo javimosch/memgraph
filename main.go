@@ -91,11 +91,23 @@ func main() {
 	// Load the project registry (auto-imports existing scopes on first run)
 	reg := loadRegistry()
 
-	// A registered alias whose remote contradicts its memory dir silently
-	// redirects --project writes (#9) — surface it on every run, not just
-	// in the projects listing. Stderr keeps --json output clean.
-	for _, w := range reg.registryWarnings() {
-		fmt.Fprintf(os.Stderr, "memgraph: warning: %s\n", w)
+	// Registry entries that can misroute --project writes (a live remote
+	// scope competing with the registered path, or an alias shadowing a
+	// same-named scope dir) get one summary line here; the full report
+	// lives in 'memgraph projects'. Registry-management commands are
+	// exempt — their output already carries the details. Stale remote
+	// metadata that cannot misroute anything is drift and stays silent
+	// outside the projects listing (#22).
+	switch command {
+	case "projects", "attach", "detach", "unregister", "rename":
+	default:
+		if n := len(reg.registryWarnings()); n > 0 {
+			what := "entries need"
+			if n == 1 {
+				what = "entry needs"
+			}
+			fmt.Fprintf(os.Stderr, "memgraph: %d registry %s attention; run 'memgraph projects'\n", n, what)
+		}
 	}
 
 	// Resolve memory directory. Priority:

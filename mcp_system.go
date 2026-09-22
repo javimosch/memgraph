@@ -9,9 +9,27 @@ import (
 	"time"
 )
 
-// mcpProjects implements the memgraph_projects tool.
-func mcpProjects(cfg *Config) string {
+// mcpProjects implements the memgraph_projects tool. With repair:true it
+// normalizes stale registry metadata instead of listing (same as
+// 'memgraph projects --repair' on the CLI).
+func mcpProjects(cfg *Config, args map[string]any) string {
 	reg := loadRegistry()
+
+	if mcpGetBool(args, "repair", false) {
+		res := reg.repairRegistry()
+		if len(res.Repaired) > 0 {
+			if err := reg.save(); err != nil {
+				return fmt.Sprintf("Failed to save registry: %v", err)
+			}
+		}
+		out, _ := json.Marshal(map[string]any{
+			"status":   "repaired",
+			"repaired": res.Repaired,
+			"skipped":  res.Skipped,
+		})
+		return string(out)
+	}
+
 	projectsDir := filepath.Join(getGlobalMemgraphDir(), "projects")
 	entries, err := os.ReadDir(projectsDir)
 	if err != nil {
@@ -48,8 +66,22 @@ func mcpProjects(cfg *Config) string {
 		return "No projects found."
 	}
 
+	// Same split as the CLI listing: warnings can misroute writes, drift is
+	// stale remote metadata that cannot (#22).
+	var notes []string
+	for _, w := range reg.registryWarnings() {
+		notes = append(notes, "Warning: "+w)
+	}
+	for _, d := range reg.registryDrift() {
+		notes = append(notes, "Drift: "+d)
+	}
+
 	header := fmt.Sprintf("Projects (%d):\n", count)
-	return header + strings.Join(lines, "\n") + "\n\nUse --project <name> or memgraph_recall with project param to access any scope."
+	out := header + strings.Join(lines, "\n")
+	if len(notes) > 0 {
+		out += "\n\n" + strings.Join(notes, "\n")
+	}
+	return out + "\n\nUse --project <name> or memgraph_recall with project param to access any scope."
 }
 
 // mcpProfile implements the memgraph_profile tool.

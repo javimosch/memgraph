@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"os"
 	"os/exec"
@@ -131,11 +132,14 @@ func TestRegistryWarnings(t *testing.T) {
 		t.Fatalf("consistent entries must not warn, got %v", w)
 	}
 
-	// Remote contradicting the memory dir's scope — the #9 signature.
+	// A recorded remote whose scope dir exists on disk is a real
+	// conflict: repo-local writes land there while --project resolves the
+	// registered path (#22).
+	mkScope("scope-unrelated")
 	reg.register("runpod", bad, "scope-unrelated")
 	joined := strings.Join(reg.registryWarnings(), "\n")
-	if !strings.Contains(joined, `"runpod"`) || !strings.Contains(joined, "scope-unrelated") || !strings.Contains(joined, "scope-real") {
-		t.Errorf("expected a remote/scope mismatch warning, got %v", joined)
+	if !strings.Contains(joined, `"runpod"`) || !strings.Contains(joined, "scope-unrelated") {
+		t.Errorf("expected a live-scope conflict warning, got %v", joined)
 	}
 
 	// An alias shadowing a real scope dir while pointing elsewhere.
@@ -151,18 +155,62 @@ func TestRegistryWarnings(t *testing.T) {
 		t.Error("expected a scope-dir collision warning for 'ghost'")
 	}
 
-	// Entries outside the projects store get no collision check, but a
-	// mismatched remote is still flagged — it can only be stale cwd scope.
+	// A remote naming a scope with no memory dir on disk cannot misroute
+	// anything — Path alone drives resolution. That's drift, not a
+	// warning (#22).
 	outside := filepath.Join(home, "elsewhere", "memory")
 	reg.register("ext", outside, "github.com-x-y")
-	found = false
 	for _, w := range reg.registryWarnings() {
 		if strings.Contains(w, `"ext"`) {
+			t.Errorf("stale remote with no live scope dir must not warn, got %v", w)
+		}
+	}
+	found = false
+	for _, d := range reg.registryDrift() {
+		if strings.Contains(d, `"ext"`) && strings.Contains(d, "github.com-x-y") {
 			found = true
 		}
 	}
 	if !found {
-		t.Error("expected a mismatch warning for outside-store entry with stale remote")
+		t.Error("expected a drift note for outside-store entry with stale remote")
+	}
+}
+
+func TestRegistryRepair(t *testing.T) {
+	reg, home := newTestRegistry(t)
+	mkScope := func(scope string) string {
+		dir := filepath.Join(home, ".memgraph", "projects", scope, "memory")
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			t.Fatal(err)
+		}
+		return dir
+	}
+
+	real := mkScope("scope-real")
+	mkScope("github.com-x-live") // live remote scope — a conflict, not drift
+
+	reg.register("ok", real, "scope-real")
+	reg.register("drifty", real, "github.com-x-gone") // no such scope dir
+	reg.register("conflict", real, "github.com-x-live")
+
+	res := reg.repairRegistry()
+	if len(res.Repaired) != 1 || res.Repaired[0] != "drifty" {
+		t.Fatalf("expected drifty repaired, got %+v", res)
+	}
+	if len(res.Skipped) != 1 || res.Skipped[0] != "conflict" {
+		t.Fatalf("a live remote scope must be skipped for a manual decision, got %+v", res)
+	}
+	if got := reg.Projects["drifty"].Remote; got != "scope-real" {
+		t.Errorf("repaired remote = %q, want the memory dir's scope %q", got, "scope-real")
+	}
+	if got := reg.Projects["conflict"].Remote; got != "github.com-x-live" {
+		t.Errorf("skipped entry must keep its remote, got %q", got)
+	}
+	if d := reg.registryDrift(); len(d) != 0 {
+		t.Errorf("repair should leave no drift, got %v", d)
+	}
+	if w := reg.registryWarnings(); len(w) != 1 {
+		t.Errorf("the live-scope conflict must still warn after repair, got %v", w)
 	}
 }
 
@@ -257,28 +305,103 @@ func TestRegistryWarningsOnLoad(t *testing.T) {
 	}
 	writeTestMemory(t, memDir, "1", "x")
 
-	// A registry entry whose remote contradicts its memory dir's scope.
-	data, _ := json.Marshal(map[string]any{
-		"projects": map[string]any{
-			"runpod": map[string]any{
-				"path":    memDir,
-				"remote":  "github.com-x-unrelated",
-				"created": "2026-01-01T00:00:00Z",
+	writeRegistry := func(remote string) {
+		data, _ := json.Marshal(map[string]any{
+			"projects": map[string]any{
+				"runpod": map[string]any{
+					"path":    memDir,
+					"remote":  remote,
+					"created": "2026-01-01T00:00:00Z",
+				},
 			},
-		},
-	})
-	if err := os.WriteFile(filepath.Join(home, ".memgraph", "projects.json"), data, 0644); err != nil {
-		t.Fatal(err)
+		})
+		if err := os.WriteFile(filepath.Join(home, ".memgraph", "projects.json"), data, 0644); err != nil {
+			t.Fatal(err)
+		}
 	}
 
-	cmd := exec.Command("go", "run", ".", "projects", "--json")
-	cmd.Env = append(os.Environ(), "HOME="+home)
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("projects failed: %v %s", err, out)
+	run := func(args ...string) (string, string, error) {
+		cmd := exec.Command("go", append([]string{"run", "."}, args...)...)
+		cmd.Env = append(os.Environ(), "HOME="+home)
+		var stdout, stderr bytes.Buffer
+		cmd.Stdout = &stdout
+		cmd.Stderr = &stderr
+		err := cmd.Run()
+		return stdout.String(), stderr.String(), err
 	}
-	if !strings.Contains(string(out), "scope-unrelated") && !strings.Contains(string(out), "github.com-x-unrelated") {
-		t.Errorf("expected the mismatch warning in output, got %s", out)
+
+	// A remote naming a scope with no dir on disk is drift: reported in
+	// the projects listing, silent on every other command (#22).
+	writeRegistry("github.com-x-unrelated")
+
+	stdout, _, err := run("projects", "--json")
+	if err != nil {
+		t.Fatalf("projects failed: %v %s", err, stdout)
+	}
+	if !strings.Contains(stdout, `"drift"`) || !strings.Contains(stdout, "github.com-x-unrelated") {
+		t.Errorf("expected the stale remote under drift, got %s", stdout)
+	}
+
+	_, stderr, err := run("status")
+	if err != nil {
+		t.Fatalf("status failed: %v", err)
+	}
+	if strings.Contains(stderr, "memgraph:") {
+		t.Errorf("drift must stay silent outside the projects listing, got stderr %q", stderr)
+	}
+
+	// --repair normalizes the stale remote to the memory dir's real scope.
+	stdout, _, err = run("projects", "--repair", "--json")
+	if err != nil {
+		t.Fatalf("repair failed: %v %s", err, stdout)
+	}
+	if !strings.Contains(stdout, `"repaired":["runpod"]`) {
+		t.Errorf("expected runpod repaired, got %s", stdout)
+	}
+	data, err := os.ReadFile(filepath.Join(home, ".memgraph", "projects.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var saved ProjectRegistry
+	if err := json.Unmarshal(data, &saved); err != nil {
+		t.Fatal(err)
+	}
+	if got := saved.Projects["runpod"].Remote; got != "scope-real" {
+		t.Errorf("repaired remote = %q, want scope-real", got)
+	}
+
+	// A remote whose scope dir DOES exist is a real conflict: one summary
+	// line on stderr for other commands, full detail in projects, and
+	// --repair refuses to pick a side (#22).
+	liveDir := filepath.Join(home, ".memgraph", "projects", "github.com-x-unrelated", "memory")
+	if err := os.MkdirAll(liveDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	writeRegistry("github.com-x-unrelated")
+
+	_, stderr, err = run("status")
+	if err != nil {
+		t.Fatalf("status failed: %v", err)
+	}
+	lines := strings.Split(strings.TrimSpace(stderr), "\n")
+	if len(lines) != 1 || !strings.Contains(lines[0], "1 registry entry needs attention") {
+		t.Errorf("expected exactly one summary line on stderr, got %q", stderr)
+	}
+
+	stdout, _, err = run("projects", "--json")
+	if err != nil {
+		t.Fatalf("projects failed: %v %s", err, stdout)
+	}
+	if !strings.Contains(stdout, `"warnings"`) || !strings.Contains(stdout, "github.com-x-unrelated") {
+		t.Errorf("expected the conflict under warnings, got %s", stdout)
+	}
+
+	stdout, _, err = run("projects", "--repair", "--json")
+	if err != nil {
+		t.Fatalf("repair failed: %v %s", err, stdout)
+	}
+	if !strings.Contains(stdout, `"skipped":["runpod"]`) {
+		t.Errorf("a live remote scope must be skipped, got %s", stdout)
 	}
 }
 

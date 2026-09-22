@@ -155,17 +155,26 @@ func scopeForMemoryDir(memDir string) string {
 	return scope
 }
 
-// registryWarnings reports entries whose scope metadata contradicts where
-// their memory dir actually lives — the signature of an attach that bound
-// the current directory's scope instead of the attached dir's (#9). A wrong
-// remote silently redirects --project writes, so callers should surface
-// these rather than swallow them.
+// registryWarnings reports entries that can actually misroute a write (#22):
+//   - scope conflict: the recorded remote names a scope dir that exists on
+//     disk with its own memory dir, so repo-local git-scoped writes land
+//     there while --project <name> writes to the registered path.
+//   - shadow: an alias collides with a real scope dir of the same name
+//     while pointing elsewhere — --project <name> resolves the registry
+//     entry, never the scope a caller would naturally expect.
+//
+// A remote that disagrees with the memory dir's scope but names no live
+// scope dir is metadata drift only (registryDrift) — Path alone drives
+// resolution, so a stale remote cannot misroute anything.
 func (reg *ProjectRegistry) registryWarnings() []string {
 	projectsDir := filepath.Join(getGlobalMemgraphDir(), "projects")
 	var warnings []string
 	for name, entry := range reg.Projects {
-		if scope := scopeForMemoryDir(entry.Path); entry.Remote != "" && entry.Remote != scope {
-			warnings = append(warnings, fmt.Sprintf("project %q has remote %q but its memory dir is in scope %q — fix with 'memgraph attach %s --from-scope %s' or edit %s", name, entry.Remote, scope, name, scope, registryPath()))
+		if entry.Remote != "" && entry.Remote != scopeForMemoryDir(entry.Path) {
+			remoteMem := filepath.Join(projectsDir, entry.Remote, "memory")
+			if dirExists(remoteMem) && filepath.Clean(remoteMem) != filepath.Clean(entry.Path) {
+				warnings = append(warnings, fmt.Sprintf("project %q resolves to %s, but scope %q also exists — repo-local writes land there while --project %s writes to the registered path; pick one with 'memgraph attach %s --from-scope <scope>'", name, entry.Path, entry.Remote, name, name))
+			}
 		}
 		if shadowed := filepath.Join(projectsDir, name, "memory"); dirExists(shadowed) && filepath.Clean(entry.Path) != shadowed {
 			warnings = append(warnings, fmt.Sprintf("project %q resolves to %s, but a scope dir named %q also exists — --project %s writes to the registered path, not that scope", name, entry.Path, name, name))
@@ -173,6 +182,62 @@ func (reg *ProjectRegistry) registryWarnings() []string {
 	}
 	sort.Strings(warnings)
 	return warnings
+}
+
+// registryDrift reports entries whose remote metadata disagrees with the
+// scope their memory dir lives in but cannot misroute anything — the
+// recorded remote scope has no memory dir on disk. Pre-#17 attaches and
+// auto-imports left these behind; Path is authoritative for resolution,
+// so this is stale metadata, not a routing problem. 'memgraph projects
+// --repair' rewrites it.
+func (reg *ProjectRegistry) registryDrift() []string {
+	projectsDir := filepath.Join(getGlobalMemgraphDir(), "projects")
+	var drift []string
+	for name, entry := range reg.Projects {
+		scope := scopeForMemoryDir(entry.Path)
+		if entry.Remote == "" || entry.Remote == scope {
+			continue
+		}
+		if dirExists(filepath.Join(projectsDir, entry.Remote, "memory")) {
+			continue // live remote scope — a warning, not drift
+		}
+		drift = append(drift, fmt.Sprintf("project %q records remote %q but its memory dir is in scope %q — stale metadata, 'memgraph projects --repair' fixes it", name, entry.Remote, scope))
+	}
+	sort.Strings(drift)
+	return drift
+}
+
+// repairResult reports what repairRegistry did.
+type repairResult struct {
+	Repaired []string `json:"repaired"` // aliases whose remote was normalized to the real scope
+	Skipped  []string `json:"skipped"`  // aliases needing a manual decision (live remote scope)
+}
+
+// repairRegistry normalizes drifted remote metadata in place. When the
+// recorded remote names a scope with no memory dir on disk, Path is
+// authoritative and Remote is rewritten to the memory dir's real scope —
+// the same value attach would record today. Entries whose remote scope
+// dir DOES exist are skipped: both scopes are live, and choosing one is a
+// data decision a repair flag should not make silently.
+func (reg *ProjectRegistry) repairRegistry() repairResult {
+	projectsDir := filepath.Join(getGlobalMemgraphDir(), "projects")
+	res := repairResult{Repaired: []string{}, Skipped: []string{}}
+	for name, entry := range reg.Projects {
+		scope := scopeForMemoryDir(entry.Path)
+		if entry.Remote == "" || entry.Remote == scope {
+			continue
+		}
+		if dirExists(filepath.Join(projectsDir, entry.Remote, "memory")) {
+			res.Skipped = append(res.Skipped, name)
+			continue
+		}
+		entry.Remote = scope
+		reg.Projects[name] = entry
+		res.Repaired = append(res.Repaired, name)
+	}
+	sort.Strings(res.Repaired)
+	sort.Strings(res.Skipped)
+	return res
 }
 
 // inferProjectName extracts a human-readable name from a scope dir name.
