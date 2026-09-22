@@ -162,6 +162,10 @@ func main() {
 		handleProjects(&cfg)
 	case "attach":
 		handleAttach(&cfg, reg)
+	case "detach", "unregister":
+		handleDetach(reg, command)
+	case "rename":
+		handleRename(reg, command)
 	case "demo":
 		handleDemo(&cfg)
 	case "import":

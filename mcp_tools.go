@@ -56,8 +56,8 @@ func getMCPTools() []mcpToolDef {
 
 		// --- Admin meta-tool (covers 15 rare operations) ---
 		mcpTool("memgraph_admin",
-			"Access less-common memgraph operations. Commands: verify, ledger, status, config, profile, sessions, init, demo, import, attach, bridge, setup, feedback, query, related, plans, graph_from_dir. Each takes an 'args' object with command-specific parameters (same as the CLI flags).",
-			`{"type":"object","properties":{"command":{"type":"string","enum":["verify","ledger","status","config","profile","sessions","init","demo","import","attach","bridge","setup","feedback","query","related","plans","graph_from_dir"],"description":"Admin command to run"},"args":{"type":"object","description":"Command-specific arguments (same params as the CLI flags for that command)","additionalProperties":true}},"required":["command"]}`),
+			"Access less-common memgraph operations. Commands: verify, ledger, status, config, profile, sessions, init, demo, import, attach, detach, rename, bridge, setup, feedback, query, related, plans, graph_from_dir. Each takes an 'args' object with command-specific parameters (same as the CLI flags).",
+			`{"type":"object","properties":{"command":{"type":"string","enum":["verify","ledger","status","config","profile","sessions","init","demo","import","attach","detach","rename","bridge","setup","feedback","query","related","plans","graph_from_dir"],"description":"Admin command to run"},"args":{"type":"object","description":"Command-specific arguments (same params as the CLI flags for that command)","additionalProperties":true}},"required":["command"]}`),
 	}
 }
 
@@ -233,6 +233,10 @@ func mcpAdminDispatch(cfg *Config, args map[string]any) jsonrpcMessage {
 		return mcpToolResultFromText(mcpProfile(cfg, subArgs))
 	case "attach":
 		return mcpToolResultFromText(mcpAttach(cfg, subArgs))
+	case "detach":
+		return mcpToolResultFromText(mcpDetach(cfg, subArgs))
+	case "rename":
+		return mcpToolResultFromText(mcpRename(cfg, subArgs))
 	case "demo":
 		return mcpToolResultFromText(mcpDemo(cfg, subArgs))
 	case "bridge":

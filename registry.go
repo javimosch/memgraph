@@ -83,6 +83,22 @@ func (reg *ProjectRegistry) unregister(name string) bool {
 	return existed
 }
 
+// rename moves an entry to a new name, keeping the memory dir, remote key,
+// and original registration time. Returns false if old is missing or new
+// is already registered.
+func (reg *ProjectRegistry) rename(oldName, newName string) bool {
+	entry, ok := reg.Projects[oldName]
+	if !ok {
+		return false
+	}
+	if _, taken := reg.Projects[newName]; taken {
+		return false
+	}
+	delete(reg.Projects, oldName)
+	reg.Projects[newName] = entry
+	return true
+}
+
 // autoImportScopes scans ~/.memgraph/projects/ and imports each scope dir
 // into the registry using the last path segment as the project name.
 // For path-based scopes like "-home-jarancibia-ai-memgraph", the inferred

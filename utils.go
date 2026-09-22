@@ -32,6 +32,7 @@ type CommandOptions struct {
 	FromScope    string
 	RemoveAttach bool
 	AttachName   string
+	Purge        bool
 
 	Net               bool
 	Mark              bool
@@ -213,6 +214,9 @@ func parseCommandArgs(args []string) ([]string, CommandOptions) {
 		case strings.HasPrefix(arg, "--remove="):
 			opts.RemoveAttach = true
 			opts.AttachName = strings.TrimPrefix(arg, "--remove=")
+			continue
+		case arg == "--purge":
+			opts.Purge = true
 			continue
 		case arg == "--net":
 			opts.Net = true

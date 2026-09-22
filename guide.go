@@ -57,6 +57,12 @@ func guideData() map[string]interface{} {
 				"memgraph ledger [--since 7d] [--limit <n>]",
 				"memgraph sessions [--json]",
 			},
+			"projects": []string{
+				"memgraph projects [--json]",
+				"memgraph attach <name> [--from-scope <scope>]",
+				"memgraph detach <name> [--purge]",
+				"memgraph rename <old> <new>",
+			},
 			"graph": []string{
 				"memgraph graph-from-dir <dir> [--include-plans]",
 				"memgraph query <text> --json",
@@ -145,6 +151,8 @@ func commandCatalog() map[string]interface{} {
 			{"name": "profile", "usage": "memgraph profile [options]", "summary": "show memory statistics"},
 			{"name": "projects", "usage": "memgraph projects", "summary": "list project scopes"},
 			{"name": "attach", "usage": "memgraph attach <name> [options]", "summary": "register a named project scope"},
+			{"name": "detach", "aliases": []string{"unregister"}, "usage": "memgraph detach <name> [--purge]", "summary": "remove a project registration, keeping memory files unless --purge is given"},
+			{"name": "rename", "usage": "memgraph rename <old> <new>", "summary": "rename a registered project alias in place"},
 			{"name": "demo", "usage": "memgraph demo", "summary": "seed sample memories"},
 			{"name": "import", "usage": "memgraph import <file|->", "summary": "import JSON or JSONL memories"},
 			{"name": "graph-from-dir", "usage": "memgraph graph-from-dir <dir> [options]", "summary": "index skills and plans into the graph"},

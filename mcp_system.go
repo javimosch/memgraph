@@ -223,6 +223,73 @@ func mcpAttach(cfg *Config, args map[string]any) string {
 	}
 }
 
+// mcpDetach implements the detach admin command — unregister a project name.
+// Memory files are kept unless purge is true. There is no interactive
+// confirmation over MCP; the explicit purge flag is the consent.
+func mcpDetach(cfg *Config, args map[string]any) string {
+	name := mcpGetString(args, "name")
+	if name == "" {
+		return "Error: name is required"
+	}
+
+	reg := loadRegistry()
+	entry, ok := reg.Projects[name]
+	if !ok {
+		return fmt.Sprintf("Project %q not found in registry", name)
+	}
+
+	purged := false
+	if mcpGetBool(args, "purge", false) {
+		if err := purgeProjectDir(entry); err != nil {
+			return "Error: " + err.Error()
+		}
+		purged = true
+	}
+
+	reg.unregister(name)
+	if err := reg.save(); err != nil {
+		return fmt.Sprintf("Failed to save registry: %v", err)
+	}
+	out, _ := json.Marshal(map[string]any{
+		"status": "detached",
+		"name":   name,
+		"path":   entry.Path,
+		"purged": purged,
+	})
+	return string(out)
+}
+
+// mcpRename implements the rename admin command — rename a registered
+// project alias in place, keeping the memory dir, remote, and created time.
+func mcpRename(cfg *Config, args map[string]any) string {
+	oldName := mcpGetString(args, "old_name")
+	newName := mcpGetString(args, "new_name")
+	if oldName == "" || newName == "" {
+		return "Error: old_name and new_name are required"
+	}
+
+	reg := loadRegistry()
+	entry, ok := reg.Projects[oldName]
+	if !ok {
+		return fmt.Sprintf("Project %q not found in registry", oldName)
+	}
+	if _, taken := reg.Projects[newName]; taken {
+		return fmt.Sprintf("Project %q is already registered", newName)
+	}
+
+	reg.rename(oldName, newName)
+	if err := reg.save(); err != nil {
+		return fmt.Sprintf("Failed to save registry: %v", err)
+	}
+	out, _ := json.Marshal(map[string]any{
+		"status": "renamed",
+		"old":    oldName,
+		"new":    newName,
+		"path":   entry.Path,
+	})
+	return string(out)
+}
+
 // mcpDemo implements the memgraph_demo tool.
 func mcpDemo(cfg *Config, args map[string]any) string {
 	projectName := mcpGetString(args, "project")
