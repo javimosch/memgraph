@@ -208,16 +208,19 @@ func mcpAttach(cfg *Config, args map[string]any) string {
 
 	default: // "register"
 		scopeDir := cfg.MemoryDir
-		scopeName := filepath.Base(filepath.Dir(scopeDir))
+		// The scope key comes from the memory dir itself — same rule as the
+		// CLI — so both surfaces write identical registry entries (#9).
+		scopeName := scopeForMemoryDir(scopeDir)
 		reg.register(name, scopeDir, scopeName)
 		if err := reg.save(); err != nil {
 			return fmt.Sprintf("Failed to save registry: %v", err)
 		}
 		out, _ := json.Marshal(map[string]any{
-			"status": "attached",
-			"name":   name,
-			"path":   scopeDir,
-			"scope":  scopeName,
+			"status":   "attached",
+			"name":     name,
+			"path":     scopeDir,
+			"scope":    scopeName,
+			"warnings": reg.registryWarnings(),
 		})
 		return string(out)
 	}
@@ -363,8 +366,8 @@ func mcpSetup(cfg *Config, args map[string]any) string {
 	}
 
 	out, _ := json.Marshal(map[string]any{
-		"status":   "configured",
-		"sync_dir": syncDir,
+		"status":    "configured",
+		"sync_dir":  syncDir,
 		"agents_md": agentsPath,
 	})
 	return string(out)
@@ -398,10 +401,10 @@ func generateAgentsMdContent(cfg *Config, syncDir string) string {
 	return fmt.Sprintf(`# AGENTS.md — memgraph
 
 ## Build & Run
-` + "```bash" + `
+`+"```bash"+`
 go build -o memgraph .
 ./memgraph serve --sync-dir %s --port 8080
-` + "```" + `
+`+"```"+`
 
 ## Skill Discovery
 - Skills are auto-synced from %s

@@ -91,6 +91,13 @@ func main() {
 	// Load the project registry (auto-imports existing scopes on first run)
 	reg := loadRegistry()
 
+	// A registered alias whose remote contradicts its memory dir silently
+	// redirects --project writes (#9) — surface it on every run, not just
+	// in the projects listing. Stderr keeps --json output clean.
+	for _, w := range reg.registryWarnings() {
+		fmt.Fprintf(os.Stderr, "memgraph: warning: %s\n", w)
+	}
+
 	// Resolve memory directory. Priority:
 	//   1. --memory-dir (explicit override)
 	//   2. --project <name> via registry (global, works from any dir)
@@ -161,7 +168,7 @@ func main() {
 	case "projects":
 		handleProjects(&cfg)
 	case "attach":
-		handleAttach(&cfg, reg)
+		handleAttach(&cfg, reg, command)
 	case "detach", "unregister":
 		handleDetach(reg, command)
 	case "rename":

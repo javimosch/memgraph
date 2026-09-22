@@ -59,7 +59,7 @@ func guideData() map[string]interface{} {
 			},
 			"projects": []string{
 				"memgraph projects [--json]",
-				"memgraph attach <name> [--from-scope <scope>]",
+				"memgraph attach <name> [--from-scope <scope> | --memory-dir <path>]",
 				"memgraph detach <name> [--purge]",
 				"memgraph rename <old> <new>",
 			},

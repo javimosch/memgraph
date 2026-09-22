@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 )
@@ -134,6 +135,44 @@ func (reg *ProjectRegistry) autoImportScopes() {
 			Created: time.Now(),
 		}
 	}
+}
+
+// scopeForMemoryDir derives the scope key a memory dir belongs to — the
+// parent dir name (in the conventional ~/.memgraph/projects/<scope>/memory
+// layout, that is <scope>). The key always describes the memory dir itself,
+// never the directory memgraph was launched from: a cwd-derived git remote
+// says nothing about an explicitly attached --memory-dir and produced
+// silent write redirects (#9).
+func scopeForMemoryDir(memDir string) string {
+	abs, err := filepath.Abs(memDir)
+	if err != nil {
+		abs = filepath.Clean(memDir)
+	}
+	scope := filepath.Base(filepath.Dir(abs))
+	if scope == "." || scope == string(filepath.Separator) {
+		return filepath.Base(abs)
+	}
+	return scope
+}
+
+// registryWarnings reports entries whose scope metadata contradicts where
+// their memory dir actually lives — the signature of an attach that bound
+// the current directory's scope instead of the attached dir's (#9). A wrong
+// remote silently redirects --project writes, so callers should surface
+// these rather than swallow them.
+func (reg *ProjectRegistry) registryWarnings() []string {
+	projectsDir := filepath.Join(getGlobalMemgraphDir(), "projects")
+	var warnings []string
+	for name, entry := range reg.Projects {
+		if scope := scopeForMemoryDir(entry.Path); entry.Remote != "" && entry.Remote != scope {
+			warnings = append(warnings, fmt.Sprintf("project %q has remote %q but its memory dir is in scope %q — fix with 'memgraph attach %s --from-scope %s' or edit %s", name, entry.Remote, scope, name, scope, registryPath()))
+		}
+		if shadowed := filepath.Join(projectsDir, name, "memory"); dirExists(shadowed) && filepath.Clean(entry.Path) != shadowed {
+			warnings = append(warnings, fmt.Sprintf("project %q resolves to %s, but a scope dir named %q also exists — --project %s writes to the registered path, not that scope", name, entry.Path, name, name))
+		}
+	}
+	sort.Strings(warnings)
+	return warnings
 }
 
 // inferProjectName extracts a human-readable name from a scope dir name.
