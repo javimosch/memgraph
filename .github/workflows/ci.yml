@@ -27,3 +27,56 @@ jobs:
 
       - name: Test
         run: go test -race ./...
+
+  # Publishes the release a `v*` tag names. Gated on build-test so a release
+  # can never be cut from a red tree -- the tag trigger above already runs
+  # the tests, this just refuses to publish when they fail.
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build-test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # required to create the release and upload assets
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.22"
+
+      # A tag that disagrees with version.go ships a binary reporting the
+      # wrong version, and the tag cannot be moved once anyone has fetched
+      # it. Cheaper to fail here than to publish a lie.
+      - name: Tag matches version.go
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          # `version`, not `--version`: the flag forms exit 85 (see #18), so
+          # the subcommand is the only one that reports a usable version.
+          code="$(go run . version | awk '{print $NF}')"
+          if [ "$tag" != "$code" ]; then
+            echo "::error::tag $GITHUB_REF_NAME implies version $tag, but version.go says $code"
+            exit 1
+          fi
+          echo "version $code matches tag $GITHUB_REF_NAME"
+
+      # -s -w matches build.sh's release target, which is what every
+      # published asset so far was built with (they are stripped).
+      - name: Build release binary
+        run: |
+          go build -ldflags "-s -w" -o memgraph .
+          sha256sum memgraph > memgraph.sha256
+          cat memgraph.sha256
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # The tag may already have a release with hand-written notes (the
+          # release-then-tag flow); attach the assets to it rather than
+          # failing, and fall back to generated notes when it does not.
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" memgraph memgraph.sha256 --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" memgraph memgraph.sha256 \
+              --title "$GITHUB_REF_NAME" --generate-notes
+          fi
