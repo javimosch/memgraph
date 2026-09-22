@@ -27,8 +27,8 @@ func getMCPTools() []mcpToolDef {
 	return []mcpToolDef{
 		// --- Core tools (agent uses these mid-task) ---
 		mcpTool("memgraph_projects",
-			"List all project scopes with names, memory counts, and paths. Use this first if you don't know what projects exist.",
-			`{"type":"object","properties":{},"required":[]}`),
+			"List all project scopes with names, memory counts, and paths, plus registry warnings and drift. Use this first if you don't know what projects exist. Pass repair:true to normalize stale registry metadata.",
+			`{"type":"object","properties":{"repair":{"type":"boolean","description":"Normalize stale remote metadata in the project registry (same as 'memgraph projects --repair')","default":false}},"required":[]}`),
 		mcpTool("memgraph_recall",
 			"Search memories by query. Returns compact section index by default — use memgraph_read to fetch full content or a specific section.",
 			`{"type":"object","properties":{"query":{"type":"string","description":"Search query (supports phrases, exclusions, prefixes, field filters)"},"project":{"type":"string","description":"Project name (works from any dir via registry)"},"tags":{"type":"array","items":{"type":"string"},"description":"Filter by tags (AND)"},"limit":{"type":"integer","default":10},"format":{"type":"string","enum":["index","full","paths"],"default":"index"}},"required":["query"]}`),
@@ -81,7 +81,7 @@ func handleMCPToolsCall(cfg *Config, msg *jsonrpcMessage) jsonrpcMessage {
 	switch params.Name {
 	// Core tools
 	case "memgraph_projects":
-		return mcpToolResultFromText(mcpProjects(cfg))
+		return mcpToolResultFromText(mcpProjects(cfg, args))
 	case "memgraph_recall":
 		return mcpToolResultFromText(mcpRecall(cfg, args))
 	case "memgraph_read":

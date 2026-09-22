@@ -33,6 +33,7 @@ type CommandOptions struct {
 	RemoveAttach bool
 	AttachName   string
 	Purge        bool
+	Repair       bool
 
 	Net               bool
 	Mark              bool
@@ -217,6 +218,9 @@ func parseCommandArgs(args []string) ([]string, CommandOptions) {
 			continue
 		case arg == "--purge":
 			opts.Purge = true
+			continue
+		case arg == "--repair":
+			opts.Repair = true
 			continue
 		case arg == "--net":
 			opts.Net = true

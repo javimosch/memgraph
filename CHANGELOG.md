@@ -15,12 +15,24 @@
   `~/.memgraph/projects/<scope>/memory` that is `<scope>` — on both the CLI
   and MCP surfaces. The wrong remote made `--project <name>` silently write
   into an unrelated scope.
-- Registry integrity warnings: on every run, entries whose `remote`
-  contradicts their memory dir's scope — and aliases that shadow a real
-  scope dir of the same name while pointing elsewhere — are reported on
-  stderr. `memgraph projects` also lists them under `warnings`, and
-  `attach` warns at registration time when the new alias collides with an
-  existing scope dir.
+- Registry integrity warnings now only fire where a mismatch can actually
+  misroute a write: a recorded `remote` whose scope dir exists on disk
+  (repo-local writes land there while `--project` resolves the registered
+  path), or an alias shadowing a same-named scope dir. `remote` is
+  metadata — `path` alone drives resolution — so entries created before
+  the attach fix or by auto-import, whose remote names no live scope dir,
+  are reclassified as `drift`: listed in `memgraph projects` (and its
+  `--json` output) but silent everywhere else. Other commands emit at
+  most one summary line — `N registry entries need attention; run
+  'memgraph projects'` — instead of the full report on every invocation.
+- Added `memgraph projects --repair` (and `repair:true` on the MCP
+  `memgraph_projects` tool): rewrites drifted `remote` metadata to the
+  memory dir's real scope — the same value `attach` records today — in
+  one command. Entries whose remote scope dir exists are skipped and
+  reported, since both scopes are live and picking one is a data
+  decision.
+- `attach` still warns at registration time when the new alias collides
+  with an existing scope dir.
 - Fixed `attach` parsing `os.Args[2:]` directly: a global flag before the
   command (e.g. `memgraph --json attach x`) registered the literal name
   "attach". It now parses the command tail like `detach`/`rename`.
