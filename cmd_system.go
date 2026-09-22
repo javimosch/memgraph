@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -319,7 +320,7 @@ func handleProjects(cfg *Config) {
 		fmt.Printf("  %-20s  %-45s  %8d  %s\n", s.Name, s.Scope, s.Memories, s.Path)
 	}
 	fmt.Printf("\nUse --project <name> or --memory-dir <path> to access any scope.\n")
-	fmt.Printf("Use 'memgraph attach <name>' to register or rename a project.\n")
+	fmt.Printf("Use 'memgraph attach <name>' to register, 'detach <name>' to unregister, 'rename <old> <new>' to rename a project.\n")
 }
 
 // handleAttach registers the current repo (or a given scope) under a
@@ -421,6 +422,152 @@ func handleAttach(cfg *Config, reg *ProjectRegistry) {
 	}
 }
 
+// handleDetach unregisters a project name — the inverse of attach. Only the
+// registry entry is removed; memory files are kept unless --purge is given.
+// command is the invoked word (detach or the unregister alias) so argument
+// parsing survives global flags placed before the command.
+//
+// Usage:
+//
+//	memgraph detach <name>            # remove the alias, keep the memories
+//	memgraph detach <name> --purge    # also delete the memory dir (asks first)
+func handleDetach(reg *ProjectRegistry, command string) {
+	args, opts := parseCommandArgs(commandTail(os.Args, command))
+
+	if len(args) == 0 {
+		if jsonOutput {
+			errorResponse(85, "missing_argument", "Usage: memgraph detach <name> [--purge]", false)
+		} else {
+			fmt.Println("Usage: memgraph detach <name> [--purge]")
+		}
+		os.Exit(85)
+	}
+	name := args[0]
+
+	entry, ok := reg.Projects[name]
+	if !ok {
+		if jsonOutput {
+			errorResponse(86, "not_found", fmt.Sprintf("Project '%s' not in registry", name), false)
+		} else {
+			fmt.Printf("Project '%s' not in registry.\n", name)
+		}
+		os.Exit(86)
+	}
+
+	// --purge is the explicit opt-in; interactive runs still confirm first.
+	// --json/-y callers are non-interactive, so the flag itself is the consent.
+	if opts.Purge && !jsonOutput && !noInteractive {
+		fmt.Printf("This will permanently delete %s (%d memory files). Continue? [y/N] ", entry.Path, countMemoryFiles(entry.Path))
+		line, _ := bufio.NewReader(os.Stdin).ReadString('\n')
+		if answer := strings.TrimSpace(line); !strings.EqualFold(answer, "y") && !strings.EqualFold(answer, "yes") {
+			fmt.Println("Aborted.")
+			return
+		}
+	}
+
+	purged := false
+	if opts.Purge {
+		if err := purgeProjectDir(entry); err != nil {
+			errorResponse(92, "purge_error", err.Error(), false)
+			os.Exit(92)
+		}
+		purged = true
+	}
+
+	reg.unregister(name)
+	if err := reg.save(); err != nil {
+		errorResponse(110, "save_error", fmt.Sprintf("Failed to save registry: %v", err), false)
+		os.Exit(110)
+	}
+
+	if jsonOutput {
+		successResponse(map[string]any{
+			"status": "detached",
+			"name":   name,
+			"path":   entry.Path,
+			"purged": purged,
+		})
+	} else {
+		fmt.Printf("Project '%s' detached from:\n  %s\n", name, entry.Path)
+		if purged {
+			fmt.Println("Memory files were deleted.")
+		} else {
+			fmt.Println("Memory files were kept.")
+		}
+	}
+}
+
+// purgeProjectDir deletes a registered memory dir, but only when it lives
+// under the projects store — a corrupted registry entry must never turn
+// 'detach --purge' into an arbitrary directory delete.
+func purgeProjectDir(entry ProjectEntry) error {
+	projectsRoot := filepath.Join(getGlobalMemgraphDir(), "projects")
+	rel, err := filepath.Rel(projectsRoot, entry.Path)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) || filepath.IsAbs(rel) {
+		return fmt.Errorf("refusing to purge %s: outside %s", entry.Path, projectsRoot)
+	}
+	if err := os.RemoveAll(entry.Path); err != nil {
+		return fmt.Errorf("failed to delete %s: %v", entry.Path, err)
+	}
+	// Drop the scope dir too if the memory dir was all it held.
+	_ = os.Remove(filepath.Dir(entry.Path))
+	return nil
+}
+
+// handleRename renames a registered project alias in place, keeping the
+// memory dir, remote key, and original registration time.
+//
+// Usage:
+//
+//	memgraph rename <old> <new>
+func handleRename(reg *ProjectRegistry, command string) {
+	args, _ := parseCommandArgs(commandTail(os.Args, command))
+	if len(args) < 2 {
+		if jsonOutput {
+			errorResponse(85, "missing_argument", "Usage: memgraph rename <old> <new>", false)
+		} else {
+			fmt.Println("Usage: memgraph rename <old> <new>")
+		}
+		os.Exit(85)
+	}
+	oldName, newName := args[0], args[1]
+
+	entry, ok := reg.Projects[oldName]
+	if !ok {
+		if jsonOutput {
+			errorResponse(86, "not_found", fmt.Sprintf("Project '%s' not in registry", oldName), false)
+		} else {
+			fmt.Printf("Project '%s' not in registry.\n", oldName)
+		}
+		os.Exit(86)
+	}
+	if _, taken := reg.Projects[newName]; taken {
+		if jsonOutput {
+			errorResponse(92, "name_conflict", fmt.Sprintf("Project '%s' is already registered", newName), false)
+		} else {
+			fmt.Printf("Project '%s' is already registered.\n", newName)
+		}
+		os.Exit(92)
+	}
+
+	reg.rename(oldName, newName)
+	if err := reg.save(); err != nil {
+		errorResponse(110, "save_error", fmt.Sprintf("Failed to save registry: %v", err), false)
+		os.Exit(110)
+	}
+
+	if jsonOutput {
+		successResponse(map[string]any{
+			"status": "renamed",
+			"old":    oldName,
+			"new":    newName,
+			"path":   entry.Path,
+		})
+	} else {
+		fmt.Printf("Project '%s' renamed to '%s'.\n  %s\n", oldName, newName, entry.Path)
+	}
+}
+
 // countMemoryFiles counts memory_*.md files in a directory.
 func countMemoryFiles(dir string) int {
 	entries, err := os.ReadDir(dir)
@@ -497,6 +644,8 @@ func printHelp() {
 	fmt.Println("    profile           Show memory statistics")
 	fmt.Println("    projects          List all project scopes across all repos (discovery command)")
 	fmt.Println("    attach <name>     Register current repo (or --from-scope <scope>) as a named project")
+	fmt.Println("    detach <name>     Unregister a project alias (keeps memory files; --purge deletes them)")
+	fmt.Println("    rename <old> <new>  Rename a registered project alias in place")
 	fmt.Println("    demo              Seed sample demo memories")
 	fmt.Println("    import <file>     Import memories from JSON/JSONL (- for stdin)")
 	fmt.Println("    graph-from-dir <dir>  Ingest SKILL.md files into a knowledge graph")
@@ -537,6 +686,7 @@ func printHelp() {
 	fmt.Println("    --mark                verify: write the stale flag into memory frontmatter (report-only by default)")
 	fmt.Println("    --with <id>           supersede: use an existing memory as the replacement")
 	fmt.Println("    --reason <why>        supersede/delete: recorded in the ledger")
+	fmt.Println("    --purge               detach: also delete the memory dir (asks first; skipped with -y/--json)")
 	fmt.Println("    --since <when>        ledger: RFC3339, YYYY-MM-DD, or a window like 7d/24h/30m")
 	fmt.Println("    --include-superseded  recall/list/verify: also show replaced memories")
 	fmt.Println("    --port <n>            Port for the serve command (default 8080)")

@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased
+
+- Added `memgraph detach <name> [--purge]` (alias `unregister`): removes a
+  project alias from `~/.memgraph/projects.json` without touching the memory
+  files. `--purge` also deletes the registered memory dir — it asks for
+  confirmation interactively (skipped under `--json`/`-y`) and refuses any
+  path outside `~/.memgraph/projects`, so a corrupted registry entry cannot
+  turn it into an arbitrary directory delete.
+- Added `memgraph rename <old> <new>`: renames a registered alias in place,
+  keeping the memory dir, remote key, and original registration time. Fails
+  if the old name is missing or the new one is taken.
+- Added `detach` and `rename` to `memgraph_admin` (MCP), the `help-json`
+  catalog, and the embedded guide's command groups.
+
 ## 1.10.0 — verify, supersede, and an append-only ledger
 
 - Added `memgraph verify`: extracts the paths, URLs, and repositories a memory
