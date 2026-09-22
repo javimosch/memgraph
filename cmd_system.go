@@ -301,10 +301,19 @@ func handleProjects(cfg *Config) {
 		return scopes[i].Memories > scopes[j].Memories
 	})
 
+	// Registry inconsistencies (remote contradicts the memory dir's scope,
+	// or an alias shadows a scope dir of the same name) make --project
+	// silently write to the wrong scope — they belong in the listing (#9).
+	warnings := reg.registryWarnings()
+	if warnings == nil {
+		warnings = []string{}
+	}
+
 	if jsonOutput {
 		successResponse(map[string]any{
 			"projects": scopes,
 			"count":    len(scopes),
+			"warnings": warnings,
 		})
 		return
 	}
@@ -319,22 +328,27 @@ func handleProjects(cfg *Config) {
 	for _, s := range scopes {
 		fmt.Printf("  %-20s  %-45s  %8d  %s\n", s.Name, s.Scope, s.Memories, s.Path)
 	}
+	for _, w := range warnings {
+		fmt.Printf("\nWarning: %s\n", w)
+	}
 	fmt.Printf("\nUse --project <name> or --memory-dir <path> to access any scope.\n")
 	fmt.Printf("Use 'memgraph attach <name>' to register, 'detach <name>' to unregister, 'rename <old> <new>' to rename a project.\n")
 }
 
-// handleAttach registers the current repo (or a given scope) under a
-// human-readable project name. This binds a stable name to a memory dir
-// so --project <name> works from any directory, even after the repo is
-// moved or deleted.
+// handleAttach registers a memory dir (the current repo's, or a given
+// scope) under a human-readable project name. This binds a stable name to
+// a memory dir so --project <name> works from any directory, even after
+// the repo is moved or deleted. command is the invoked word so argument
+// parsing survives global flags placed before the command.
 //
 // Usage:
 //
-//	memgraph attach <name>                    # register current repo as <name>
-//	memgraph attach <name> --from-scope <scope>  # rebind an orphaned scope
-//	memgraph attach --remove <name>           # unregister a project name
-func handleAttach(cfg *Config, reg *ProjectRegistry) {
-	args, opts := parseCommandArgs(os.Args[2:])
+//	memgraph attach <name>                          # register current repo as <name>
+//	memgraph attach <name> --memory-dir <path>      # register an explicit memory dir
+//	memgraph attach <name> --from-scope <scope>     # rebind an orphaned scope
+//	memgraph attach --remove <name>                 # unregister a project name
+func handleAttach(cfg *Config, reg *ProjectRegistry, command string) {
+	args, opts := parseCommandArgs(commandTail(os.Args, command))
 
 	if opts.RemoveAttach && opts.AttachName != "" {
 		// Unregister mode
@@ -360,9 +374,9 @@ func handleAttach(cfg *Config, reg *ProjectRegistry) {
 
 	if len(args) == 0 && opts.AttachName == "" {
 		if jsonOutput {
-			errorResponse(85, "missing_argument", "Usage: memgraph attach <name> [--from-scope <scope>]", false)
+			errorResponse(85, "missing_argument", "Usage: memgraph attach <name> [--from-scope <scope> | --memory-dir <path>]", false)
 		} else {
-			fmt.Println("Usage: memgraph attach <name> [--from-scope <scope>]")
+			fmt.Println("Usage: memgraph attach <name> [--from-scope <scope> | --memory-dir <path>]")
 			fmt.Println("       memgraph attach --remove <name>")
 		}
 		os.Exit(85)
@@ -389,15 +403,18 @@ func handleAttach(cfg *Config, reg *ProjectRegistry) {
 		}
 		remoteScope = opts.FromScope
 	} else {
-		// Register current repo
+		// Register the resolved memory dir — the current repo's scope, or
+		// an explicit --memory-dir. The scope key always comes from the
+		// dir itself; the cwd's git remote says nothing about an attached
+		// dir and produced silent write redirects (#9).
 		memDir = cfg.MemoryDir
-		// Try to get remote for stable key
-		remote := getGitRemoteURL()
-		if remote != "" {
-			remoteScope = normalizeRemoteURL(remote)
-		} else {
-			remoteScope = sanitizePath(cfg.ProjectRoot)
-		}
+		remoteScope = scopeForMemoryDir(memDir)
+	}
+
+	// Warn when the alias would shadow a real scope dir of the same name —
+	// that collision is how this class of mis-mapping stays invisible (#9).
+	if shadowed := filepath.Join(getGlobalMemgraphDir(), "projects", name, "memory"); dirExists(shadowed) && filepath.Clean(shadowed) != filepath.Clean(memDir) {
+		fmt.Fprintf(os.Stderr, "memgraph: warning: a scope dir named %q already exists; --project %s will resolve to %s, not that scope\n", name, name, memDir)
 	}
 
 	reg.register(name, memDir, remoteScope)
@@ -643,7 +660,7 @@ func printHelp() {
 	fmt.Println("    ledger            Read the append-only record of supersedes and deletes")
 	fmt.Println("    profile           Show memory statistics")
 	fmt.Println("    projects          List all project scopes across all repos (discovery command)")
-	fmt.Println("    attach <name>     Register current repo (or --from-scope <scope>) as a named project")
+	fmt.Println("    attach <name>     Register current repo, --memory-dir <path>, or --from-scope <scope> as a named project")
 	fmt.Println("    detach <name>     Unregister a project alias (keeps memory files; --purge deletes them)")
 	fmt.Println("    rename <old> <new>  Rename a registered project alias in place")
 	fmt.Println("    demo              Seed sample demo memories")
