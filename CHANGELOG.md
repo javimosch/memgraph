@@ -1,20 +1,7 @@
 # Changelog
 
-## 1.11.0 — project aliases you can rename, remove, and repair
+## 1.11.1 — quieter warnings and a global-flag-friendly command line
 
-- Graph explorer UI: the galaxy view is now titled "Memgraph — Galaxy" and
-  carries a `galaxy` badge, with Inter as the interface font. `graph.js`
-  drops its IIFE wrapper — the file is already an ES module, so the wrapper
-  only cost a level of indentation — and folds `init`/`initThree` into
-  module top-level. Behaviour is unchanged. The UI is embedded in the
-  binary via `go:embed`, so it ships inside this release's asset.
-- Fixed `memgraph attach <name> --memory-dir <path>` recording the current
-  directory's git remote as the project `remote` instead of the scope the
-  memory dir actually belongs to. The scope key is now always derived from
-  the memory dir's parent directory name — for
-  `~/.memgraph/projects/<scope>/memory` that is `<scope>` — on both the CLI
-  and MCP surfaces. The wrong remote made `--project <name>` silently write
-  into an unrelated scope.
 - Registry integrity warnings now only fire where a mismatch can actually
   misroute a write: a recorded `remote` whose scope dir exists on disk
   (repo-local writes land there while `--project` resolves the registered
@@ -33,9 +20,6 @@
   decision.
 - `attach` still warns at registration time when the new alias collides
   with an existing scope dir.
-- Fixed `attach` parsing `os.Args[2:]` directly: a global flag before the
-  command (e.g. `memgraph --json attach x`) registered the literal name
-  "attach". It now parses the command tail like `detach`/`rename`.
 - Fixed command detection when a value-taking global flag precedes the
   command: `memgraph --project aplomb config` read `aplomb` as the command
   and exited 85. The scanner now drives off one table of value-taking
@@ -44,6 +28,31 @@
 - Fixed `memgraph --version`/`--help`/`-v`/`-h` exiting 85: a leading
   help/version flag now counts as the command instead of being skipped by
   the scanner.
+
+## 1.11.0 — project aliases you can rename, remove, and repair
+
+- Graph explorer UI: the galaxy view is now titled "Memgraph — Galaxy" and
+  carries a `galaxy` badge, with Inter as the interface font. `graph.js`
+  drops its IIFE wrapper — the file is already an ES module, so the wrapper
+  only cost a level of indentation — and folds `init`/`initThree` into
+  module top-level. Behaviour is unchanged. The UI is embedded in the
+  binary via `go:embed`, so it ships inside this release's asset.
+- Fixed `memgraph attach <name> --memory-dir <path>` recording the current
+  directory's git remote as the project `remote` instead of the scope the
+  memory dir actually belongs to. The scope key is now always derived from
+  the memory dir's parent directory name — for
+  `~/.memgraph/projects/<scope>/memory` that is `<scope>` — on both the CLI
+  and MCP surfaces. The wrong remote made `--project <name>` silently write
+  into an unrelated scope.
+- Registry integrity warnings: on every run, entries whose `remote`
+  contradicts their memory dir's scope — and aliases that shadow a real
+  scope dir of the same name while pointing elsewhere — are reported on
+  stderr. `memgraph projects` also lists them under `warnings`, and
+  `attach` warns at registration time when the new alias collides with an
+  existing scope dir.
+- Fixed `attach` parsing `os.Args[2:]` directly: a global flag before the
+  command (e.g. `memgraph --json attach x`) registered the literal name
+  "attach". It now parses the command tail like `detach`/`rename`.
 - Added `memgraph detach <name> [--purge]` (alias `unregister`): removes a
   project alias from `~/.memgraph/projects.json` without touching the memory
   files. `--purge` also deletes the registered memory dir — it asks for
