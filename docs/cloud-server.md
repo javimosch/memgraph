@@ -39,7 +39,23 @@ its hash is stored. There is no command to delete a project yet.
 The server speaks plain HTTP, and requests carry the token. Put a TLS proxy in front.
 It refuses a non-loopback address unless you pass `--allow-non-loopback`; do that only
 if the network path is already private, such as a container network behind the proxy.
-The proxy must allow request bodies of 32 MB and requests lasting 90 s.
+The proxy must allow request bodies of 32 MB and requests lasting 180 s.
+
+## Failed logins
+
+After 20 failed logins in a minute a client gets 429. Requests without credentials do
+not count. Tokens are far too long to guess; this limits wasted work and log noise.
+
+Behind a proxy every request comes from the proxy's address. To tell clients apart,
+start the server with `--client-ip-header X-Forwarded-For` (or your proxy's header).
+
+- **Only do this if the proxy sets or appends that header and clients cannot reach the
+  server directly.** The server uses the last address in it. With more than one proxy
+  in front, that is the address of a proxy, not of the client.
+- With the header set, a client over the limit is blocked even with a valid token,
+  until the minute ends. Machines sharing one public address share that limit.
+- Without it, local clients cannot be told apart. Failed logins get 429 after the
+  limit, but **a valid token is never refused**.
 
 ## Running it as a service
 
@@ -75,8 +91,19 @@ A push is accepted only if it:
    `memory_*.md`
 
 git alone does not enforce all of this: rules 1, 4 and 5 rely on the `pre-receive`
-hook, which the server installs at startup. If the hook cannot run, git rejects the
-push.
+hook, which the server installs at startup. If the hook program cannot run, git
+rejects the push. But **git accepts every push if the hook file is missing or not
+executable**, so:
+
+- At startup the server pushes to a temporary repository, which no token can reach:
+  one valid push must be accepted and one forbidden push refused. Otherwise it does
+  not start.
+- Before each push it checks that the hook file is unchanged and executable. If not,
+  it answers 503 to every push and logs `REFUSING PUSHES`. Fetches still work.
+  Restarting reinstalls the hook.
+
+The per-push check does not protect against someone who can already write to the
+data directory.
 
 The server does not check memory content. A valid token holder can push bad content or
 delete memories; client guards and git history limit the damage.
@@ -90,8 +117,13 @@ delete memories; client guards and git history limit the damage.
 | All objects in a push, unpacked | 128 MB |
 | Objects in a push | 100,000 |
 | Commits in a push / files per tree | 100 / 20,000 |
-| One git process | 60 s |
-| Pushes / fetches handled at once | 2 / 4 |
+| One git process: a request / maintenance | 60 s / 600 s |
+| Pushes / fetches handled by git at once | 2 / 4 |
+| Request bodies held on disk at once | 8, so up to 256 MB, plus git's temporary files for 2 pushes |
+| Wait for a free slot before answering 503 | 10 s, at each of the two steps |
+| Receiving headers / a whole request | 10 s / 60 s |
+| A request and its response, from the headers on | 180 s |
+| Idle connection | 60 s |
 
 Every pack is scanned **before** git sees it. git's own `receive.maxInputSize` limits
 only compressed bytes: in testing, without the scan, a push under 0.01 MB made git use
@@ -100,19 +132,22 @@ only compressed bytes: in testing, without the scan, a push under 0.01 MB made g
 ## Upkeep
 
 Every 500 pushes (`--repack-every`) the server compacts the project and removes
-leftovers of rejected pushes. Pushes wait while it runs; fetches continue. In a test
+leftovers of rejected pushes. The count is kept in the repository, so it survives
+restarts; maintenance that was due runs at the next start. After a failure it is
+retried 10 pushes later. Pushes wait while it runs; fetches continue. In a test
 with 10,000 commits and 3,629 files this took up to about 6 s, and the slowest push
 7.5 s.
 
 ## Not done yet
 
-- No startup check that the hook really runs.
-- No limit on repeated failed logins.
-- No limit on disk used by uploads arriving at once (each may be 32 MB).
-- The push count restarts with the server, so a server restarted often may never run
-  upkeep.
-- The 60 s timeout, slow clients and many simultaneous users are untested.
 - **Power loss:** git 2.34 has no `core.fsync` setting, so an acknowledged push might be
   lost. Untested.
 - No backup tooling. Copy the data directory's `repos/` and `tokens.json` to another
   machine. After restoring an old copy, clients stop until they join again.
+- The service setup and the proxy have not been tested. Neither has running longer
+  than a test.
+- One machine with a valid token can occupy all upload slots for up to a request's
+  time limit.
+- Nothing limits how large a project grows on disk.
+- When the server is busy, `cloud sync` fails and has to be run again. With 12 test
+  clients syncing at once, 21 runs were needed in one test run.

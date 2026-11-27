@@ -88,6 +88,11 @@ No default sync directory. The user must pass `--sync-dir`. Multiple comma-separ
 - **The pre-scan of packs is a safety requirement**, not an optimisation:
   `receive.maxInputSize` does not limit unpacked size.
 - **Startup recovery assumes no earlier git process is alive.**
+- **git accepts every push when the hook file is missing or not executable.** Keep
+  both the startup self-check and the per-push `verifyHook`.
+- Go's `WriteTimeout` also covers reading the request body.
+- A test that looks for leftover processes must match their exact arguments, or it
+  finds the shell that mentions them.
 - In tests the test binary is the push hook and, for the crash test, the server.
 - When changing a push rule, check its test fails without it. A rejection test can
   pass for the wrong reason, e.g. because the push also lacked an object.

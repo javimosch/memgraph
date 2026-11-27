@@ -87,20 +87,25 @@ func (d Data) CreateProject(name string) error {
 		if d.hasProject(name) {
 			return fmt.Errorf("project %q already exists", name)
 		}
-		// Built aside and renamed, so a running server never sees half a repo.
-		staging, err := os.MkdirTemp(d.Dir, "staging-")
-		if err != nil {
-			return err
-		}
-		defer os.RemoveAll(staging)
-		repo := filepath.Join(staging, "repo.git")
-		cmd := exec.Command("git", "init", "--quiet", "--bare", "--template=", "--initial-branch=main", repo)
-		cmd.Env = []string{"PATH=" + os.Getenv("PATH"), "HOME=" + staging, "GIT_CONFIG_NOSYSTEM=1"}
-		if out, err := cmd.CombinedOutput(); err != nil {
-			return fmt.Errorf("git init: %v: %s", err, out)
-		}
-		return os.Rename(repo, d.repo(name))
+		return d.initRepo(d.repo(name))
 	})
+}
+
+// initRepo makes an empty bare repository. It is built aside and renamed, so a
+// running server never sees half a repository.
+func (d Data) initRepo(path string) error {
+	staging, err := os.MkdirTemp(d.Dir, "staging-")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(staging)
+	repo := filepath.Join(staging, "repo.git")
+	cmd := exec.Command("git", "init", "--quiet", "--bare", "--template=", "--initial-branch=main", repo)
+	cmd.Env = []string{"PATH=" + os.Getenv("PATH"), "HOME=" + staging, "GIT_CONFIG_NOSYSTEM=1"}
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("git init: %v: %s", err, out)
+	}
+	return os.Rename(repo, path)
 }
 
 // Projects lists the project names.

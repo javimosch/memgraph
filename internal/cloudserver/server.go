@@ -29,12 +29,25 @@ type Limits struct {
 	Body, Object, Total int64 // bytes: request, one object, all objects of a push
 	Objects             int
 	Receives, Uploads   int // requests handled at once
-	Seconds             int // for one git process
+	Seconds             int // for one git process serving a request
+	MaintenanceSeconds  int // for one git process doing maintenance
+	// Spools is how many request bodies may be on disk at once, and so bounds
+	// that disk to Spools times Body.
+	Spools     int
+	Wait       time.Duration // for a free slot, before answering "busy"
+	AuthFails  int           // failed logins per client per AuthWindow
+	AuthWindow time.Duration
+	// Connection timeouts, which stop a slow client from holding a slot.
+	ReadHeader, Read, Write, Idle time.Duration
 }
 
 // DefaultLimits are the limits of docs/cloud-server.md.
 var DefaultLimits = Limits{Body: 32 << 20, Object: 16 << 20, Total: 128 << 20,
-	Objects: 100_000, Receives: 2, Uploads: 4, Seconds: 60}
+	Objects: 100_000, Receives: 2, Uploads: 4, Seconds: 60, MaintenanceSeconds: 600,
+	Spools: 8, Wait: 10 * time.Second, AuthFails: 20, AuthWindow: time.Minute,
+	// Write starts when the headers are read, so it has to cover receiving
+	// the body, waiting for a slot and running git.
+	ReadHeader: 10 * time.Second, Read: 60 * time.Second, Write: 180 * time.Second, Idle: 60 * time.Second}
 
 // Options configure a server.
 type Options struct {
@@ -44,13 +57,9 @@ type Options struct {
 	RepackEvery int
 	// HookCommand runs PreReceive on its standard input, program first.
 	HookCommand []string
-}
-
-type project struct {
-	pushes sync.RWMutex // pushes share it; repack takes it exclusively
-	mu     sync.Mutex
-	count  int
-	repack bool
+	// ClientIPHeader names the header in which a trusted proxy puts the
+	// client's address, such as X-Forwarded-For. Empty trusts no header.
+	ClientIPHeader string
 }
 
 // Server is an http.Handler for the projects of one data directory.
@@ -63,9 +72,14 @@ type Server struct {
 	env          []string
 	receives     chan struct{}
 	uploads      chan struct{}
-	projects     sync.Map
-	maintenance  sync.WaitGroup
-	unlock       func()
+	spools       chan struct{}
+	logins       *limiter
+	ipHeader     string
+
+	hookPath, hookScript string
+	projects             sync.Map
+	maintenance          sync.WaitGroup
+	unlock               func()
 }
 
 func shellQuote(s string) string { return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'" }
@@ -80,7 +94,9 @@ func New(opts Options) (_ *Server, err error) {
 		return nil, errors.New("a hook command is required: without it any push would be accepted")
 	}
 	s := &Server{data: Data{Dir: dir}, lim: opts.Limits, repackEvery: opts.RepackEvery,
-		receives: make(chan struct{}, opts.Limits.Receives), uploads: make(chan struct{}, opts.Limits.Uploads)}
+		receives: make(chan struct{}, opts.Limits.Receives), uploads: make(chan struct{}, opts.Limits.Uploads),
+		spools: make(chan struct{}, opts.Limits.Spools), ipHeader: opts.ClientIPHeader,
+		logins: newLimiter(opts.Limits.AuthFails, opts.Limits.AuthWindow)}
 	if s.git, err = exec.LookPath("git"); err != nil {
 		return nil, fmt.Errorf("the server needs git: %w", err)
 	}
@@ -111,7 +127,8 @@ func New(opts Options) (_ *Server, err error) {
 	for _, arg := range opts.HookCommand {
 		script += " " + shellQuote(arg)
 	}
-	if err := fsx.WriteFileAtomic(filepath.Join(hooks, "pre-receive"), []byte(script+"\n"), 0700); err != nil {
+	s.hookPath, s.hookScript = filepath.Join(hooks, "pre-receive"), script+"\n"
+	if err := fsx.WriteFileAtomic(s.hookPath, []byte(s.hookScript), 0700); err != nil {
 		return nil, err
 	}
 
@@ -137,7 +154,19 @@ func New(opts Options) (_ *Server, err error) {
 	for i, kv := range cfg {
 		s.env = append(s.env, fmt.Sprintf("GIT_CONFIG_KEY_%d=%s", i, kv[0]), fmt.Sprintf("GIT_CONFIG_VALUE_%d=%s", i, kv[1]))
 	}
-	return s, s.recover()
+	if err := s.recover(); err != nil {
+		return nil, err
+	}
+	if err := s.selfCheck(); err != nil {
+		return nil, fmt.Errorf("startup self-check failed: %w", err)
+	}
+	return s, s.resumeMaintenance()
+}
+
+// HTTPServer returns an http.Server for s with the connection timeouts set.
+func (s *Server) HTTPServer() *http.Server {
+	return &http.Server{Handler: s, ReadHeaderTimeout: s.lim.ReadHeader,
+		ReadTimeout: s.lim.Read, WriteTimeout: s.lim.Write, IdleTimeout: s.lim.Idle}
 }
 
 // Close waits for maintenance and releases the data directory. Stop serving
@@ -173,11 +202,6 @@ func (s *Server) recover() error {
 	})
 }
 
-func (s *Server) project(name string) *project {
-	p, _ := s.projects.LoadOrStore(name, &project{})
-	return p.(*project)
-}
-
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path == "/health" {
 		fmt.Fprintln(w, "ok")
@@ -188,10 +212,20 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	client := clientOf(r, s.ipHeader)
+	if client != "" && s.logins.blocked(client) {
+		tooMany(w, s.lim.AuthWindow)
+		return
+	}
 	var projects []string
 	_, secret, ok := r.BasicAuth()
 	if ok {
-		projects, ok = s.data.authorize(secret)
+		// A valid token from an unidentified client is never refused for what
+		// others did.
+		if projects, ok = s.data.authorize(secret); !ok && s.logins.fail(client) {
+			tooMany(w, s.lim.AuthWindow)
+			return
+		}
 	}
 	if !ok {
 		w.Header().Set("WWW-Authenticate", `Basic realm="memgraph"`)
@@ -226,6 +260,27 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		http.Error(w, "request rejected", code)
 	}
+}
+
+func tooMany(w http.ResponseWriter, retry time.Duration) {
+	w.Header().Set("Retry-After", strconv.Itoa(max(1, int(retry.Seconds()))))
+	http.Error(w, "too many failed logins", http.StatusTooManyRequests)
+}
+
+// take waits for a free slot and returns how to give it back, or answers
+// "busy" and returns nil.
+func (s *Server) take(w http.ResponseWriter, r *http.Request, slots chan struct{}) func() {
+	timer := time.NewTimer(s.lim.Wait)
+	defer timer.Stop()
+	select {
+	case slots <- struct{}{}:
+		return func() { <-slots }
+	case <-timer.C:
+	case <-r.Context().Done():
+	}
+	w.Header().Set("Retry-After", "5")
+	http.Error(w, "busy", http.StatusServiceUnavailable)
+	return nil
 }
 
 // spool writes the decompressed, size-limited body to a file. Go's CGI handler
@@ -273,32 +328,54 @@ func (s *Server) serveGit(w http.ResponseWriter, r *http.Request, name, endpoint
 	var body *os.File
 	var size int64
 	if r.Method == http.MethodPost {
-		slots := s.uploads
-		if endpoint == "git-receive-pack" {
-			slots = s.receives
+		// Taken before reading, so uploads cannot fill the disk.
+		done := s.take(w, r, s.spools)
+		if done == nil {
+			return nil
 		}
+		defer done()
 		var err error
 		if body, size, err = s.spool(w, r); err != nil {
 			return err
 		}
 		defer body.Close()
-		select {
-		case slots <- struct{}{}:
-			defer func() { <-slots }()
-		case <-time.After(10 * time.Second):
-			http.Error(w, "busy", http.StatusServiceUnavailable)
+		slots := s.uploads
+		if endpoint == "git-receive-pack" {
+			slots = s.receives
+		}
+		free := s.take(w, r, slots)
+		if free == nil {
 			return nil
 		}
+		defer free()
 	}
 	p := s.project(name)
-	if endpoint == "git-receive-pack" {
+	if endpoint == "git-receive-pack" && r.Method == http.MethodPost {
 		if err := s.prescan(body, size); err != nil {
 			return err
 		}
 		p.pushes.RLock()
 		defer p.pushes.RUnlock()
+		if err := s.verifyHook(); err != nil {
+			log.Printf("REFUSING PUSHES, restart the server: %v", err)
+			http.Error(w, "server cannot enforce its push rules", http.StatusServiceUnavailable)
+			return nil
+		}
 	}
+	cw := &counter{ResponseWriter: w}
+	s.backend(cw, r, body, size, log.Writer())
+	if endpoint == "git-upload-pack" {
+		log.Printf("%s upload-pack: sent %d bytes", name, cw.n)
+	}
+	if endpoint == "git-receive-pack" && r.Method == http.MethodPost {
+		s.afterPush(name, p)
+	}
+	return nil
+}
 
+// backend runs git http-backend for one checked request. What git and the hook
+// print goes to stderr.
+func (s *Server) backend(w http.ResponseWriter, r *http.Request, body *os.File, size int64, stderr io.Writer) {
 	r2 := r.Clone(r.Context())
 	for _, h := range []string{"Authorization", "Content-Encoding", "Proxy"} {
 		r2.Header.Del(h) // the token never enters a child's environment
@@ -317,52 +394,7 @@ func (s *Server) serveGit(w http.ResponseWriter, r *http.Request, name, endpoint
 			"GIT_PROJECT_ROOT="+s.data.repos(),
 			"GIT_HTTP_EXPORT_ALL=1", "REMOTE_USER=memgraph"),
 		Logger: log.Default(),
-		Stderr: log.Writer(),
+		Stderr: stderr,
 	}
-	cw := &counter{ResponseWriter: w}
-	h.ServeHTTP(cw, r2)
-	if endpoint == "git-upload-pack" {
-		log.Printf("%s upload-pack: sent %d bytes", name, cw.n)
-	}
-	if endpoint == "git-receive-pack" {
-		s.afterPush(name, p)
-	}
-	return nil
-}
-
-// afterPush repacks in the background. Pushes wait for it, fetches do not.
-func (s *Server) afterPush(name string, p *project) {
-	if s.repackEvery <= 0 {
-		return
-	}
-	p.mu.Lock()
-	p.count++
-	due := p.count%s.repackEvery == 0 && !p.repack
-	p.repack = p.repack || due
-	p.mu.Unlock()
-	if !due {
-		return
-	}
-	s.maintenance.Add(1)
-	go func() {
-		defer s.maintenance.Done()
-		p.pushes.Lock() // waits for the triggering push to release its read lock
-		defer p.pushes.Unlock()
-		start := time.Now()
-		// A push that loses the ref race has already left its objects behind,
-		// so prune too. Both are safe because no push is running.
-		var out []byte
-		var err error
-		for _, args := range [][]string{{"repack", "-adq"}, {"prune", "--expire=now"}} {
-			cmd := exec.Command(s.git, append([]string{"-C", s.data.repo(name)}, args...)...)
-			cmd.Env = s.env
-			if out, err = cmd.CombinedOutput(); err != nil {
-				break
-			}
-		}
-		log.Printf("repack %s: %v err=%v %s", name, time.Since(start), err, out)
-		p.mu.Lock()
-		p.repack = false
-		p.mu.Unlock()
-	}()
+	h.ServeHTTP(w, r2)
 }

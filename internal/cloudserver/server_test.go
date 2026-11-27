@@ -95,7 +95,9 @@ func start(t *testing.T, change ...func(*Options)) *srv {
 func (s *srv) boot(t *testing.T) {
 	t.Helper()
 	s.server = must(New(s.opts))
-	s.http = httptest.NewServer(s.server)
+	s.http = httptest.NewUnstartedServer(s.server)
+	s.http.Config = s.server.HTTPServer()
+	s.http.Start()
 	s.url = s.http.URL + "/p.git"
 }
 
@@ -594,17 +596,6 @@ func TestOneServerPerDataDirAndHookRequired(t *testing.T) {
 		t.Fatal("started without a hook command")
 	}
 	s.boot(t)
-}
-
-// A broken hook must close the door, not open it.
-func TestFailingHookRejectsEverything(t *testing.T) {
-	s := start(t, func(o *Options) { o.HookCommand = []string{"/nonexistent/memgraph"} })
-	b := newBuilder()
-	c, objs := b.simple("root", []byte("root"))
-	code, out, err := s.send(requestBody(b.pack(objs), cmdOf(plumbing.ZeroHash, c, mainRef.String())), s.token)
-	if err != nil || accepted(code, out) || !s.head().IsZero() {
-		t.Fatalf("%d %q %v", code, out, err)
-	}
 }
 
 func TestAdmin(t *testing.T) {

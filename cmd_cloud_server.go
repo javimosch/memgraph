@@ -8,7 +8,6 @@ import (
 	"io"
 	"log"
 	"net"
-	"net/http"
 	"os"
 	"os/signal"
 	"strings"
@@ -20,7 +19,7 @@ import (
 
 const cloudServerUsage = `memgraph cloud, server side (run on the machine that hosts the projects)
 
-  cloud serve --data <dir> [--listen 127.0.0.1:8787]
+  cloud serve --data <dir> [--listen 127.0.0.1:8787] [--client-ip-header X-Forwarded-For]
   cloud admin project create <name> --data <dir>
   cloud admin project list --data <dir>
   cloud admin token create --name <machine> --project <p> [--project <p>] --data <dir>
@@ -39,7 +38,7 @@ func isCloudServerCommand(args []string) bool {
 	for i := 0; i < len(args); i++ {
 		switch arg := args[i]; {
 		case arg == "--data" || arg == "--listen" || arg == "--name" || arg == "--project" ||
-			arg == "--server" || arg == "--repack-every" || arg == "--memory-dir":
+			arg == "--server" || arg == "--repack-every" || arg == "--memory-dir" || arg == "--client-ip-header":
 			i++
 		case !strings.HasPrefix(arg, "-"):
 			return arg == "serve" || arg == "admin" || arg == "hook"
@@ -58,6 +57,7 @@ type serverArgs struct {
 	data, listen, name string
 	projects           repeated
 	repackEvery        int
+	clientIPHeader     string
 	allowNonLoopback   bool
 }
 
@@ -71,6 +71,7 @@ func parseServerArgs(args []string) (serverArgs, error) {
 	fs.StringVar(&a.name, "name", "", "")
 	fs.Var(&a.projects, "project", "")
 	fs.IntVar(&a.repackEvery, "repack-every", 500, "")
+	fs.StringVar(&a.clientIPHeader, "client-ip-header", "", "")
 	fs.BoolVar(&a.allowNonLoopback, "allow-non-loopback", false, "")
 	for _, global := range []string{"json", "j", "y", "no-interactive"} {
 		fs.Bool(global, false, "") // handled by main
@@ -214,7 +215,8 @@ func serveCloud(a serverArgs) error {
 		return err
 	}
 	srv, err := cloudserver.New(cloudserver.Options{DataDir: a.data, Limits: cloudserver.DefaultLimits,
-		RepackEvery: a.repackEvery, HookCommand: []string{self, "cloud", "hook", "pre-receive"}})
+		RepackEvery: a.repackEvery, HookCommand: []string{self, "cloud", "hook", "pre-receive"},
+		ClientIPHeader: a.clientIPHeader})
 	if err != nil {
 		return err
 	}
@@ -223,8 +225,7 @@ func serveCloud(a serverArgs) error {
 	if err != nil {
 		return err
 	}
-	hs := &http.Server{Handler: srv, ReadHeaderTimeout: 10 * time.Second,
-		ReadTimeout: 60 * time.Second, WriteTimeout: 90 * time.Second, IdleTimeout: 60 * time.Second}
+	hs := srv.HTTPServer()
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	done := make(chan error, 1)
@@ -236,7 +237,7 @@ func serveCloud(a serverArgs) error {
 	case <-ctx.Done():
 	}
 	log.Print("shutting down")
-	wait, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	wait, cancel := context.WithTimeout(context.Background(), cloudserver.DefaultLimits.Write)
 	defer cancel()
 	return hs.Shutdown(wait)
 }
