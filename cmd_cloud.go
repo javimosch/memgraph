@@ -42,7 +42,9 @@ const cloudUsage = `memgraph cloud: sync a project between machines (opt-in per 
 Options: --server <url>, --allow-mass-delete, -y (no confirmation)
          --allow-finding <fingerprint>  with enable or clone, repeatable
 
-cloud local also works before enable, to keep a memory out of the first upload.`
+cloud local also works before enable, to keep a memory out of the first upload.
+
+Server side: cloud serve, cloud admin (see 'memgraph cloud server-help')`
 
 type cloudArgs struct {
 	words           []string
@@ -486,6 +488,8 @@ func handleCloud(cfg *Config) {
 	switch sub {
 	case "help":
 		fmt.Println(cloudUsage)
+	case "server-help":
+		fmt.Println(cloudServerUsage)
 	case "login":
 		server := strings.TrimRight(arg("a server URL"), "/")
 		if err := cloudsync.CheckURL(server); err != nil {

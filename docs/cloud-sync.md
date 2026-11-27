@@ -2,10 +2,10 @@
 
 Share one memgraph project between your own machines through a git server you run.
 
-**Status: client only, unreleased.** The matching memgraph server is not part of
-memgraph yet. The client needs a git smart-HTTP server whose repository has the branch
-`main`. A server without memgraph's push rules does not protect the repository from a
-faulty or hostile client.
+**Status: unreleased.** The server is `memgraph cloud serve`; see
+[cloud-server.md](cloud-server.md), including what it does not do yet. Another git
+smart-HTTP server with a `main` branch also works, but without memgraph's push rules it
+does not protect the repository from a faulty or hostile client.
 
 - **Opt-in per project.** Nothing syncs until you enable it, and only when you run
   `sync`. `recall` and `save` never contact the server.

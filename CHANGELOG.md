@@ -4,8 +4,10 @@
 
 - New `memgraph cloud` commands: opt-in, manual sync of a project between
   machines through a git smart-HTTP server, with conflict copies, local-only
-  memories, secret scanning and deletion guards. Client only; see
-  `docs/cloud-sync.md`.
+  memories, secret scanning and deletion guards. See `docs/cloud-sync.md`.
+- New `memgraph cloud serve` and `memgraph cloud admin` to host projects: git
+  does storage; memgraph adds per-machine tokens, size limits, push rules and
+  upkeep. Not ready for real memories yet; see `docs/cloud-server.md`.
 - Memory files are now written atomically, and writers lock the memory
   directory (`.memgraph.lock`). Restart long-running `memgraph mcp` processes
   after upgrading.

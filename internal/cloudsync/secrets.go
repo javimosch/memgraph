@@ -20,6 +20,7 @@ var secretRules = []struct {
 	name string
 	re   *regexp.Regexp
 }{
+	{"memgraph-token", regexp.MustCompile(`\bmgc_[A-Za-z0-9_-]{43}`)},
 	{"private-key", regexp.MustCompile(`-----BEGIN [A-Z ]*PRIVATE KEY( BLOCK)?-----`)},
 	{"aws-access-key", regexp.MustCompile(`\b(AKIA|ASIA)[0-9A-Z]{16}\b`)},
 	{"github-token", regexp.MustCompile(`\b(gh[pousr]_[A-Za-z0-9]{36,}|github_pat_[A-Za-z0-9_]{60,})\b`)},

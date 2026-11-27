@@ -1,0 +1,242 @@
+package main
+
+import (
+	"context"
+	"errors"
+	"flag"
+	"fmt"
+	"io"
+	"log"
+	"net"
+	"net/http"
+	"os"
+	"os/signal"
+	"strings"
+	"syscall"
+	"time"
+
+	"github.com/javimosch/memgraph/internal/cloudserver"
+)
+
+const cloudServerUsage = `memgraph cloud, server side (run on the machine that hosts the projects)
+
+  cloud serve --data <dir> [--listen 127.0.0.1:8787]
+  cloud admin project create <name> --data <dir>
+  cloud admin project list --data <dir>
+  cloud admin token create --name <machine> --project <p> [--project <p>] --data <dir>
+  cloud admin token list --data <dir>
+  cloud admin token revoke <id> --data <dir>
+
+--data may also come from MEMGRAPH_CLOUD_DATA. Run admin commands as the same
+user as the server. See docs/cloud-server.md.`
+
+// isCloudServerCommand reports whether args (after "cloud") are server side.
+// These run before any local config or registry is touched: the push hook is
+// started by git, and a server has no memories of its own.
+func isCloudServerCommand(args []string) bool {
+	// The first word decides. Flags may come first, because main() moves
+	// global flags behind "cloud".
+	for i := 0; i < len(args); i++ {
+		switch arg := args[i]; {
+		case arg == "--data" || arg == "--listen" || arg == "--name" || arg == "--project" ||
+			arg == "--server" || arg == "--repack-every" || arg == "--memory-dir":
+			i++
+		case !strings.HasPrefix(arg, "-"):
+			return arg == "serve" || arg == "admin" || arg == "hook"
+		}
+	}
+	return false
+}
+
+type repeated []string
+
+func (r *repeated) String() string     { return strings.Join(*r, ",") }
+func (r *repeated) Set(v string) error { *r = append(*r, v); return nil }
+
+type serverArgs struct {
+	words              []string
+	data, listen, name string
+	projects           repeated
+	repackEvery        int
+	allowNonLoopback   bool
+}
+
+// parseServerArgs accepts flags before, between and after the words.
+func parseServerArgs(args []string) (serverArgs, error) {
+	var a serverArgs
+	fs := flag.NewFlagSet("cloud", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	fs.StringVar(&a.data, "data", os.Getenv("MEMGRAPH_CLOUD_DATA"), "")
+	fs.StringVar(&a.listen, "listen", "127.0.0.1:8787", "")
+	fs.StringVar(&a.name, "name", "", "")
+	fs.Var(&a.projects, "project", "")
+	fs.IntVar(&a.repackEvery, "repack-every", 500, "")
+	fs.BoolVar(&a.allowNonLoopback, "allow-non-loopback", false, "")
+	for _, global := range []string{"json", "j", "y", "no-interactive"} {
+		fs.Bool(global, false, "") // handled by main
+	}
+	for {
+		if err := fs.Parse(args); err != nil {
+			return a, err
+		}
+		if fs.NArg() == 0 {
+			return a, nil
+		}
+		a.words = append(a.words, fs.Arg(0))
+		args = fs.Args()[1:]
+	}
+}
+
+// checkListen keeps plain HTTP, which carries tokens, on this machine.
+func checkListen(addr string, allowNonLoopback bool) error {
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		return err
+	}
+	ip := net.ParseIP(host)
+	if allowNonLoopback || host == "localhost" || (ip != nil && ip.IsLoopback()) {
+		return nil
+	}
+	return errors.New("the server speaks plain HTTP: listen on loopback behind a TLS proxy, " +
+		"or pass --allow-non-loopback if the network path is already private")
+}
+
+func handleCloudServer(args []string) {
+	// git starts the hook with exactly these arguments; check them first.
+	if len(args) > 0 && args[0] == "hook" {
+		if len(args) != 2 || args[1] != "pre-receive" {
+			os.Exit(1) // a hook that does not understand must refuse
+		}
+		if err := cloudserver.PreReceive(os.Stdin); err != nil {
+			fmt.Fprintln(os.Stderr, "memgraph:", err)
+			os.Exit(1)
+		}
+		return
+	}
+	a, err := parseServerArgs(args)
+	if err != nil {
+		cloudFail(85, "invalid_argument", err)
+	}
+	if a.words[0] == "hook" {
+		os.Exit(1)
+	}
+	if a.data == "" {
+		cloudFail(80, "missing_argument", errors.New("--data <dir> is required\n\n"+cloudServerUsage))
+	}
+	if a.words[0] == "serve" {
+		if len(a.words) != 1 {
+			cloudFail(85, "invalid_argument", errors.New("cloud serve takes only options"))
+		}
+		if err := serveCloud(a); err != nil {
+			cloudFail(110, "server", err)
+		}
+		return
+	}
+	adminCloud(cloudserver.Data{Dir: a.data}, a)
+}
+
+func adminCloud(data cloudserver.Data, a serverArgs) {
+	usage := func() { cloudFail(85, "invalid_argument", errors.New("unknown admin command\n\n"+cloudServerUsage)) }
+	if len(a.words) < 3 {
+		usage()
+	}
+	what, rest := a.words[1]+" "+a.words[2], a.words[3:]
+	one := func() string {
+		if len(rest) != 1 {
+			usage()
+		}
+		return rest[0]
+	}
+	none := func() {
+		if len(rest) != 0 {
+			usage()
+		}
+	}
+	fail := func(err error) {
+		if err != nil {
+			cloudFail(110, "admin", err)
+		}
+	}
+	switch what {
+	case "project create":
+		name := one()
+		fail(data.CreateProject(name))
+		cloudOutput(map[string]any{"status": "created", "project": name}, func() {
+			fmt.Printf("Created project %s\n", name)
+		})
+	case "project list":
+		none()
+		names, err := data.Projects()
+		fail(err)
+		cloudOutput(map[string]any{"projects": names}, func() {
+			for _, n := range names {
+				fmt.Println(n)
+			}
+		})
+	case "token create":
+		none()
+		secret, token, err := data.CreateToken(a.name, a.projects)
+		fail(err)
+		cloudOutput(map[string]any{"id": token.ID, "name": token.Name, "projects": token.Projects, "token": secret}, func() {
+			// Only the secret goes to stdout, so it can be piped.
+			fmt.Fprintf(os.Stderr, "Token %s for %s (%s). It is shown only now:\n",
+				token.ID, token.Name, strings.Join(token.Projects, ", "))
+			fmt.Println(secret)
+		})
+	case "token list":
+		none()
+		tokens, err := data.Tokens()
+		fail(err)
+		rows := []map[string]any{} // without hashes
+		for _, t := range tokens {
+			rows = append(rows, map[string]any{"id": t.ID, "name": t.Name, "projects": t.Projects, "created": t.Created})
+		}
+		cloudOutput(map[string]any{"tokens": rows}, func() {
+			for _, t := range tokens {
+				fmt.Printf("%s  %s  %s  %s\n", t.ID, t.Created.Format(time.DateOnly), t.Name, strings.Join(t.Projects, ","))
+			}
+		})
+	case "token revoke":
+		id := one()
+		fail(data.RevokeToken(id))
+		cloudOutput(map[string]any{"status": "revoked", "id": id}, func() { fmt.Printf("Revoked token %s\n", id) })
+	default:
+		usage()
+	}
+}
+
+func serveCloud(a serverArgs) error {
+	if err := checkListen(a.listen, a.allowNonLoopback); err != nil {
+		return err
+	}
+	self, err := os.Executable()
+	if err != nil {
+		return err
+	}
+	srv, err := cloudserver.New(cloudserver.Options{DataDir: a.data, Limits: cloudserver.DefaultLimits,
+		RepackEvery: a.repackEvery, HookCommand: []string{self, "cloud", "hook", "pre-receive"}})
+	if err != nil {
+		return err
+	}
+	defer srv.Close()
+	ln, err := net.Listen("tcp", a.listen)
+	if err != nil {
+		return err
+	}
+	hs := &http.Server{Handler: srv, ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout: 60 * time.Second, WriteTimeout: 90 * time.Second, IdleTimeout: 60 * time.Second}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	done := make(chan error, 1)
+	go func() { done <- hs.Serve(ln) }()
+	log.Printf("memgraph cloud listening on %s", ln.Addr())
+	select {
+	case err := <-done:
+		return err
+	case <-ctx.Done():
+	}
+	log.Print("shutting down")
+	wait, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+	return hs.Shutdown(wait)
+}

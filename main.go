@@ -18,6 +18,8 @@ var (
 // parseCommandArgs (utils.go).
 var valueFlags = map[string]bool{
 	"--attach-name":   true,
+	"--data":          true,
+	"--listen":        true,
 	"--format":        true,
 	"--from-scope":    true,
 	"--limit":         true,
@@ -127,6 +129,11 @@ func main() {
 			printHelp()
 			return
 		}
+	}
+
+	if command == "cloud" && isCloudServerCommand(os.Args[2:]) {
+		handleCloudServer(os.Args[2:])
+		return
 	}
 
 	cfg := Config{
