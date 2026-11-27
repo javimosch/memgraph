@@ -20,6 +20,9 @@ import (
 type Options struct {
 	Token           string
 	AllowMassDelete bool
+	// RequireEmptyServer makes a first sync fail unless the server has no
+	// commits, including commits that arrive while it runs.
+	RequireEmptyServer bool
 	// DryRun computes what would change and writes nothing to either side.
 	DryRun bool
 	// Content returns the body of a memory file, as the ledger records it.
@@ -43,6 +46,9 @@ type Result struct {
 	Ignored  []string `json:"ignored"`
 	Commit   string   `json:"commit,omitempty"`
 }
+
+// ErrServerNotEmpty stops a first sync that required an empty server.
+var ErrServerNotEmpty = errors.New("the server project is not empty")
 
 // BlockedError means a guard stopped the sync before anything changed.
 type BlockedError struct {
@@ -154,6 +160,9 @@ func run(store Store, link Link, st *State, opts Options) (*Result, error) {
 		head, err := rem.head()
 		if err != nil {
 			return nil, err
+		}
+		if opts.RequireEmptyServer && st.LastSeen == "" && !head.IsZero() {
+			return nil, ErrServerNotEmpty
 		}
 		if err := rem.fetch(head); err != nil {
 			return nil, err
@@ -370,6 +379,10 @@ func apply(dir string, st *State, p *plan) error {
 			names[n] = true
 		}
 	}
+	batch := fsx.NewBatch(dir)
+	defer batch.Discard()
+	// The base moves only after the files are durably in place.
+	agreed := Manifest{}
 	for _, name := range slices.Sorted(maps.Keys(names)) {
 		want, was := hashOf(p.merged, name), hashOf(p.local, name)
 		if want != was {
@@ -384,18 +397,21 @@ func apply(dir string, st *State, p *plan) error {
 				continue
 			}
 			if want == "" {
-				err = os.Remove(path)
-			} else {
-				err = fsx.WriteFileAtomic(path, p.merged[name], 0644)
-			}
-			if err != nil {
+				batch.Remove(name)
+			} else if err := batch.Write(name, p.merged[name], 0644); err != nil {
 				return err
 			}
 		}
-		if want == "" {
+		agreed[name] = want
+	}
+	if err := batch.Commit(); err != nil {
+		return err
+	}
+	for name, hash := range agreed {
+		if hash == "" {
 			delete(st.Base, name)
 		} else {
-			st.Base[name] = want
+			st.Base[name] = hash
 		}
 	}
 	path := filepath.Join(dir, LedgerName)

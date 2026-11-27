@@ -2,7 +2,10 @@ module github.com/javimosch/memgraph
 
 go 1.26.0
 
-require github.com/go-git/go-git/v5 v5.19.3
+require (
+	github.com/go-git/go-git/v5 v5.19.3
+	golang.org/x/sys v0.47.0
+)
 
 require (
 	dario.cat/mergo v1.0.0 // indirect
@@ -22,6 +25,5 @@ require (
 	github.com/xanzy/ssh-agent v0.3.3 // indirect
 	golang.org/x/crypto v0.56.0 // indirect
 	golang.org/x/net v0.57.0 // indirect
-	golang.org/x/sys v0.47.0 // indirect
 	gopkg.in/warnings.v0 v0.1.2 // indirect
 )

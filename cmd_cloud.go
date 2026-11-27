@@ -262,8 +262,8 @@ func syncError(project string, joining bool, err error) int {
 }
 
 // syncOne syncs a linked project, rebuilds its search index and returns an
-// exit code.
-func syncOne(cfg *Config, project string, a cloudArgs) int {
+// exit code. enabling marks the first sync of 'cloud enable'.
+func syncOne(cfg *Config, project string, a cloudArgs, enabling bool) int {
 	store := cloudStore(project)
 	link, err := store.Link()
 	if err != nil {
@@ -273,7 +273,15 @@ func syncOne(cfg *Config, project string, a cloudArgs) int {
 	if err != nil {
 		return syncError(project, false, err)
 	}
+	opts.RequireEmptyServer = enabling
 	res, err := cloudsync.Sync(store, opts)
+	if errors.Is(err, cloudsync.ErrServerNotEmpty) {
+		// Another machine got there first. Nothing was synced, so unlink.
+		if rerr := os.RemoveAll(store.Dir); rerr != nil {
+			return syncError(project, false, rerr)
+		}
+		return syncError(project, false, notEmpty(project))
+	}
 	if err != nil {
 		return syncError(project, false, err)
 	}
@@ -314,6 +322,10 @@ func confirmCloud(question string) bool {
 	line, _ := bufio.NewReader(os.Stdin).ReadString('\n')
 	line = strings.ToLower(strings.TrimSpace(line))
 	return line == "y" || line == "yes"
+}
+
+func notEmpty(project string) error {
+	return fmt.Errorf("server project %q already has history; join it with 'memgraph cloud clone %s'", project, project)
 }
 
 // join links a project after showing what the first sync would do.
@@ -364,15 +376,15 @@ func join(cfg *Config, a cloudArgs, project, dir string, enabling bool) int {
 	}
 	if err = errors.Join(preview.SaveLink(link), preview.Save(allowed)); err == nil {
 		dry := opts
-		dry.DryRun = true
+		dry.DryRun, dry.RequireEmptyServer = true, enabling
 		res, err = cloudsync.Sync(preview, dry)
 	}
 	os.RemoveAll(tmp)
+	if errors.Is(err, cloudsync.ErrServerNotEmpty) {
+		cloudFail(86, "not_empty", notEmpty(project))
+	}
 	if err != nil {
 		return syncError(project, true, err)
-	}
-	if enabling && len(res.Downloaded) > 0 {
-		cloudFail(86, "not_empty", fmt.Errorf("server project %q already has memories; use 'memgraph cloud clone %s'", project, project))
 	}
 	if !jsonOutput {
 		printSync(project, res)
@@ -400,7 +412,7 @@ func join(cfg *Config, a cloudArgs, project, dir string, enabling bool) int {
 			cloudFail(110, "registry", err)
 		}
 	}
-	return syncOne(cfg, project, a)
+	return syncOne(cfg, project, a, enabling)
 }
 
 // setLocal rewrites a memory with the local-only flag set or cleared.
@@ -529,7 +541,7 @@ func handleCloud(cfg *Config) {
 		worst := 0
 		for _, name := range names {
 			// A failure outranks conflicts.
-			if code := syncOne(cfg, name, a); code != 0 && (worst == 0 || worst == exitConflicts) {
+			if code := syncOne(cfg, name, a, false); code != 0 && (worst == 0 || worst == exitConflicts) {
 				worst = code
 			}
 		}

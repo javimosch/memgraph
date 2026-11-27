@@ -509,3 +509,34 @@ func TestBadTokenAndURLs(t *testing.T) {
 		}
 	}
 }
+
+func TestRequireEmptyServer(t *testing.T) {
+	// Already populated, even with identical content.
+	s, _, _ := pair(t)
+	late := newVM(t, s)
+	late.write("a", "alpha")
+	late.write("b", "bravo")
+	for _, dry := range []bool{true, false} {
+		late.opts.RequireEmptyServer, late.opts.DryRun = true, dry
+		if _, err := Sync(late.store, late.opts); !errors.Is(err, ErrServerNotEmpty) {
+			t.Fatalf("dry=%v: error = %v", dry, err)
+		}
+	}
+
+	// Two machines enabling at once: the one that loses the push must not merge.
+	s = newServer(t)
+	one, two := newVM(t, s), newVM(t, s)
+	one.write("one", "1")
+	two.write("two", "2")
+	one.opts.RequireEmptyServer, two.opts.RequireEmptyServer = true, true
+	one.opts.beforePush = func() { two.sync() }
+	if _, err := Sync(one.store, one.opts); !errors.Is(err, ErrServerNotEmpty) {
+		t.Fatalf("race: error = %v", err)
+	}
+	if !slices.Equal(s.files(), []string{"memory_two.md"}) || one.read("two") != "" {
+		t.Fatalf("merged anyway: %v", s.files())
+	}
+	// Once linked, the requirement no longer applies.
+	two.write("more", "3")
+	two.sync()
+}
