@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.12.0 — opt-in cloud sync, and search that needs far less memory
 
 - Search reads the memory files directly instead of keeping
   `search_index.json`, and uses far less memory: measured on 3,688 memories, a

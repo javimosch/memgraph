@@ -3,7 +3,7 @@
 Host memgraph cloud projects for your own machines. For the client, see
 [cloud-sync.md](cloud-sync.md).
 
-**Status: unreleased and not ready for real memories.** See "Not done yet".
+**Status: new in 1.12.0 and not yet ready for real memories.** See "Not done yet".
 
 It is the same `memgraph` program. git does storage and transfer; memgraph adds access
 control, size limits, push rules and upkeep. It is unrelated to `memgraph serve`, the
@@ -11,7 +11,8 @@ graph explorer.
 
 ## Needs
 
-Linux, `git` and coreutils `timeout`. Tested with git 2.34.1 and 2.39.5. The server sets
+Linux, `git` and coreutils `timeout`. Tested with git 2.34.1, 2.39.5 and
+2.43.0. The server sets
 git's flush settings by version.
 
 ## Set up
