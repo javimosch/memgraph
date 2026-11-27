@@ -540,3 +540,145 @@ func TestRequireEmptyServer(t *testing.T) {
 	two.write("more", "3")
 	two.sync()
 }
+
+// storeObjects counts what the local object store holds.
+func (v *vm) storeObjects() (loose, packs int) {
+	root := filepath.Join(v.store.Dir, "repo.git", "objects")
+	filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+		if err == nil && !d.IsDir() {
+			if len(filepath.Base(filepath.Dir(path))) == 2 {
+				loose++
+			} else if strings.HasSuffix(path, ".pack") {
+				packs++
+			}
+		}
+		return nil
+	})
+	return loose, packs
+}
+
+// exact fails unless the store holds one snapshot and nothing else.
+func (v *vm) exact(s *server, when string) {
+	v.t.Helper()
+	want := map[string]bool{}
+	for _, line := range strings.Split(gitCmd(v.t, s.repo, "ls-tree", "main"), "\n") {
+		want[strings.Fields(line)[2]] = true
+	}
+	loose, packs := v.storeObjects()
+	if packs != 0 || loose != len(want)+2 { // blobs, one tree, one commit
+		v.t.Fatalf("%s: %d loose objects and %d packs, want %d and 0", when, loose, packs, len(want)+2)
+	}
+}
+
+func TestLocalStoreDoesNotGrowWithHistory(t *testing.T) {
+	s, one, two := pair(t)
+	for i := range 12 {
+		one.write("a", fmt.Sprint("version ", i))
+		one.write(fmt.Sprint("new", i), fmt.Sprint(i))
+		one.sync()
+		one.exact(s, "after upload")
+		if i%4 == 3 { // several commits behind
+			two.sync()
+			two.exact(s, "after download")
+		}
+	}
+	late := newVM(t, s) // a clone receives the whole history as a pack
+	late.sync()
+	late.exact(s, "after clone")
+	if late.read("a") != "version 11" || two.read("new11") != "11" {
+		t.Fatal("content wrong")
+	}
+	// A pruned clone must still be able to push and fetch.
+	late.write("from-late", "x")
+	late.sync()
+	one.sync()
+	if one.read("from-late") != "x" {
+		t.Fatal("push after pruning did not arrive")
+	}
+	one.exact(s, "end")
+	gitCmd(t, s.repo, "fsck", "--full", "--strict")
+}
+
+func TestBlockedSyncsDoNotPileUp(t *testing.T) {
+	_, one, two := pair(t)
+	two.write("oops", "AKIA"+strings.Repeat("Q", 16))
+	var first int
+	for i := range 4 {
+		one.write("a", fmt.Sprint("remote change ", i))
+		one.sync()
+		two.blocked("secret")
+		loose, packs := two.storeObjects()
+		if i == 0 {
+			first = loose
+		}
+		if packs != 0 || loose != first {
+			t.Fatalf("round %d: %d loose, %d packs (first %d)", i, loose, packs, first)
+		}
+	}
+}
+
+func TestDamagedStoreRepairsItself(t *testing.T) {
+	_, one, two := pair(t)
+	root := filepath.Join(two.store.Dir, "repo.git", "objects")
+	hash := BlobHash([]byte("---\nname: b\n---\n\nbravo\n"))
+	if err := os.Remove(filepath.Join(root, hash[:2], hash[2:])); err != nil {
+		t.Fatal(err)
+	}
+	one.write("a", "after damage")
+	one.sync()
+	two.sync()
+	if two.read("a") != "after damage" || two.read("b") != "bravo" {
+		t.Fatal("did not recover")
+	}
+}
+
+// A server replaced by an unrelated history must stop a pruned client.
+func TestUnrelatedServerHistoryStops(t *testing.T) {
+	_, one, _ := pair(t)
+	other := newVM(t, newServer(t))
+	other.write("zz", "other")
+	other.sync()
+	link, _ := other.store.Link()
+	mine, _ := one.store.Link()
+	mine.URL = link.URL
+	one.store.SaveLink(mine)
+	one.blocked("history")
+	if one.read("a") != "alpha" || one.read("zz") != "" {
+		t.Fatal("local files changed")
+	}
+}
+
+// A crash can leave an object file that exists but is empty or cut short.
+func TestCorruptStoreRepairsItself(t *testing.T) {
+	for name, damage := range map[string]func([]byte) []byte{
+		"empty":     func([]byte) []byte { return nil },
+		"truncated": func(b []byte) []byte { return b[:len(b)/2] },
+		"garbage":   func([]byte) []byte { return []byte("not an object") },
+	} {
+		for _, target := range []string{"blob", "commit"} {
+			t.Run(name+" "+target, func(t *testing.T) {
+				s, one, two := pair(t)
+				hash := BlobHash([]byte("---\nname: b\n---\n\nbravo\n"))
+				if target == "commit" {
+					hash = gitCmd(t, s.repo, "rev-parse", "main")
+				}
+				path := filepath.Join(two.store.Dir, "repo.git", "objects", hash[:2], hash[2:])
+				data, err := os.ReadFile(path)
+				if err != nil {
+					t.Fatal(err)
+				}
+				os.Chmod(path, 0644)
+				if err := os.WriteFile(path, damage(data), 0644); err != nil {
+					t.Fatal(err)
+				}
+				one.write("a", "after damage")
+				one.sync()
+				two.sync()
+				if two.read("a") != "after damage" || two.read("b") != "bravo" {
+					t.Fatal("did not recover")
+				}
+				two.exact(s, "after repair")
+			})
+		}
+	}
+}

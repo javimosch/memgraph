@@ -107,6 +107,14 @@ overwritten; the next sync merges it. **Restart long-running processes such as
 `memgraph mcp` after upgrading:** an older one does not take the lock. Editors and
 scripts do not take it either.
 
+## Local sync data
+
+Each linked project keeps a copy of the last synced snapshot in
+`~/.memgraph/sync/<project>/repo.git`, so its size follows the size of the memories,
+not the number of syncs. It is a cache: if it is damaged, the next sync downloads the
+project again with its history. A first clone also downloads the whole history, which
+grows over time.
+
 ## Exit codes
 
 0 synced, 93 synced with open conflicts, 94 blocked by a guard, 110 error.

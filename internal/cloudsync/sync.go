@@ -156,6 +156,14 @@ func run(store Store, link Link, st *State, opts Options) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
+	if !opts.DryRun {
+		if _, err := rem.repair(st.LastSeen); err != nil {
+			return nil, err
+		}
+		// Also after a failed or blocked sync, or retries would pile up. A
+		// cache that cannot be pruned only costs disk space.
+		defer func() { _ = rem.prune(st.LastSeen) }()
+	}
 	for attempt := 1; ; attempt++ {
 		head, err := rem.head()
 		if err != nil {
@@ -164,7 +172,7 @@ func run(store Store, link Link, st *State, opts Options) (*Result, error) {
 		if opts.RequireEmptyServer && st.LastSeen == "" && !head.IsZero() {
 			return nil, ErrServerNotEmpty
 		}
-		if err := rem.fetch(head); err != nil {
+		if err := rem.fetch(head, st.LastSeen); err != nil {
 			return nil, err
 		}
 		if st.LastSeen != "" {
@@ -189,14 +197,14 @@ func run(store Store, link Link, st *State, opts Options) (*Result, error) {
 		}
 		newHead := head
 		if p.changed {
-			c, err := rem.commit(head, p.push, "memgraph sync")
+			c, send, err := rem.commit(head, p.push, "memgraph sync")
 			if err != nil {
 				return nil, err
 			}
 			if opts.beforePush != nil {
 				opts.beforePush()
 			}
-			if err := rem.push(c); err != nil {
+			if err := rem.push(head, c, send); err != nil {
 				// Retry only if the server moved under us.
 				now, herr := rem.head()
 				if herr == nil && now != head && attempt < attempts {

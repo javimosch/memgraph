@@ -1,6 +1,7 @@
 package cloudsync
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -15,10 +16,12 @@ import (
 	"time"
 
 	git "github.com/go-git/go-git/v5"
-	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/filemode"
+	"github.com/go-git/go-git/v5/plumbing/format/packfile"
 	"github.com/go-git/go-git/v5/plumbing/object"
+	"github.com/go-git/go-git/v5/plumbing/protocol/packp"
+	"github.com/go-git/go-git/v5/plumbing/protocol/packp/capability"
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	"github.com/go-git/go-git/v5/plumbing/transport/client"
 	githttp "github.com/go-git/go-git/v5/plumbing/transport/http"
@@ -66,10 +69,15 @@ func hardenHTTP() {
 	})
 }
 
+// remote talks to one server repository. It drives go-git's protocol sessions
+// itself: Remote.Push and Remote.Fetch walk the whole history, which would make
+// every sync slower than the last and rule out pruning the local store.
 type remote struct {
-	repo *git.Repository
-	r    *git.Remote
-	auth transport.AuthMethod
+	repo   *git.Repository
+	dir    string
+	client transport.Transport
+	end    *transport.Endpoint
+	auth   transport.AuthMethod
 }
 
 func openRemote(store Store, link Link, token string) (*remote, error) {
@@ -77,56 +85,105 @@ func openRemote(store Store, link Link, token string) (*remote, error) {
 		return nil, err
 	}
 	hardenHTTP()
-	dir := store.path("repo.git")
-	repo, err := git.PlainOpen(dir)
-	if errors.Is(err, git.ErrRepositoryNotExists) {
-		repo, err = git.PlainInit(dir, true)
-	}
+	end, err := transport.NewEndpoint(link.URL)
 	if err != nil {
 		return nil, err
 	}
-	cfg := &config.RemoteConfig{Name: "origin", URLs: []string{link.URL}}
-	return &remote{repo: repo, r: git.NewRemote(repo.Storer, cfg),
-		auth: &githttp.BasicAuth{Username: "memgraph", Password: token}}, nil
+	c, err := client.NewClient(end)
+	if err != nil {
+		return nil, err
+	}
+	r := &remote{dir: store.path("repo.git"), client: c, end: end,
+		auth: &githttp.BasicAuth{Username: "memgraph", Password: token}}
+	return r, r.open()
+}
+
+func (r *remote) open() (err error) {
+	r.repo, err = git.PlainOpen(r.dir)
+	if errors.Is(err, git.ErrRepositoryNotExists) {
+		r.repo, err = git.PlainInit(r.dir, true)
+	}
+	return err
 }
 
 // head asks the server where main is; zero means the repository is empty.
 func (r *remote) head() (plumbing.Hash, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), netTimeout)
 	defer cancel()
-	refs, err := r.r.ListContext(ctx, &git.ListOptions{Auth: r.auth})
+	session, err := r.client.NewUploadPackSession(r.end, r.auth)
+	if err != nil {
+		return plumbing.ZeroHash, err
+	}
+	defer session.Close()
+	ar, err := session.AdvertisedReferencesContext(ctx)
 	if errors.Is(err, transport.ErrEmptyRemoteRepository) {
 		return plumbing.ZeroHash, nil
 	}
 	if err != nil {
 		return plumbing.ZeroHash, err
 	}
-	for _, ref := range refs {
-		if ref.Name() == mainRef {
-			return ref.Hash(), nil
-		}
+	if h, ok := ar.References[mainRef.String()]; ok {
+		return h, nil
 	}
-	if len(refs) > 0 {
+	if len(ar.References) > 0 {
 		return plumbing.ZeroHash, errors.New("server repository has no main branch")
 	}
 	return plumbing.ZeroHash, nil
 }
 
-func (r *remote) fetch(h plumbing.Hash) error {
-	if h.IsZero() {
+// fetch downloads head. have is the last synced commit, whose snapshot the
+// local store holds, so the server sends only what is newer. Without it the
+// server sends the whole history.
+func (r *remote) fetch(head plumbing.Hash, have string) error {
+	if head.IsZero() {
 		return nil
 	}
-	if _, err := r.repo.CommitObject(h); err == nil {
+	if _, err := r.repo.CommitObject(head); err == nil {
 		return nil
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), netTimeout)
 	defer cancel()
-	err := r.r.FetchContext(ctx, &git.FetchOptions{Auth: r.auth, Tags: git.NoTags,
-		RefSpecs: []config.RefSpec{"+refs/heads/main:refs/remotes/origin/main"}})
-	if err != nil && !errors.Is(err, git.NoErrAlreadyUpToDate) {
+	session, err := r.client.NewUploadPackSession(r.end, r.auth)
+	if err != nil {
 		return err
 	}
-	_, err = r.repo.CommitObject(h)
+	defer session.Close()
+	ar, err := session.AdvertisedReferencesContext(ctx)
+	if err != nil {
+		return err
+	}
+	req := packp.NewUploadPackRequest()
+	req.Wants = []plumbing.Hash{head}
+	// Claim a commit only if it is really here: after a repair it is not.
+	if _, err := r.repo.CommitObject(plumbing.NewHash(have)); err != nil {
+		have = ""
+	}
+	if have != "" {
+		req.Haves = []plumbing.Hash{plumbing.NewHash(have)}
+	}
+	// No multi_ack (go-git cannot read it) and no thin pack.
+	if ar.Capabilities.Supports(capability.OFSDelta) {
+		if err := req.Capabilities.Set(capability.OFSDelta); err != nil {
+			return err
+		}
+	}
+	res, err := session.UploadPack(ctx, req)
+	if err != nil {
+		return err
+	}
+	defer res.Close()
+	if err := packfile.UpdateObjectStorage(r.repo.Storer, res); err != nil {
+		return err
+	}
+	// Reopen: the storage caches its list of packs.
+	if err := r.open(); err != nil {
+		return err
+	}
+	_, err = r.repo.CommitObject(head)
+	// A server asked for an ancestor of "have" sends nothing.
+	if errors.Is(err, plumbing.ErrObjectNotFound) && have != "" {
+		return ErrHistoryRewritten
+	}
 	return err
 }
 
@@ -137,6 +194,11 @@ func (r *remote) descends(tip plumbing.Hash, old string) (bool, error) {
 			return true, nil
 		}
 		c, err := r.repo.CommitObject(h)
+		// The server sends every commit between old and a descendant of it,
+		// so a gap means this history does not lead to old.
+		if errors.Is(err, plumbing.ErrObjectNotFound) {
+			return false, nil
+		}
 		if err != nil {
 			return false, err
 		}
@@ -218,35 +280,77 @@ func (r *remote) storeBlob(data []byte) (plumbing.Hash, error) {
 	return r.repo.Storer.SetEncodedObject(o)
 }
 
-// commit writes files as one flat commit on top of parent.
-func (r *remote) commit(parent plumbing.Hash, files Files, message string) (plumbing.Hash, error) {
-	var entries []object.TreeEntry
-	for _, name := range slices.SortedFunc(maps.Keys(files), strings.Compare) {
-		h, err := r.storeBlob(files[name])
+// commit writes files as one flat commit on top of parent and returns it with
+// the objects the parent's snapshot does not already have.
+func (r *remote) commit(parent plumbing.Hash, files Files, message string) (plumbing.Hash, []plumbing.Hash, error) {
+	none := plumbing.ZeroHash
+	had := map[plumbing.Hash]bool{}
+	if !parent.IsZero() {
+		_, entries, err := r.snapshot(parent)
 		if err != nil {
-			return plumbing.ZeroHash, err
+			return none, nil, err
+		}
+		for _, e := range entries {
+			had[e.Hash] = true
+		}
+	}
+	var entries []object.TreeEntry
+	var send []plumbing.Hash
+	for _, name := range slices.SortedFunc(maps.Keys(files), strings.Compare) {
+		h := plumbing.NewHash(BlobHash(files[name]))
+		if !had[h] {
+			stored, err := r.storeBlob(files[name])
+			if err != nil {
+				return none, nil, err
+			}
+			h, had[stored] = stored, true
+			send = append(send, h)
 		}
 		entries = append(entries, object.TreeEntry{Name: name, Mode: filemode.Regular, Hash: h})
 	}
 	tree, err := r.store(&object.Tree{Entries: entries})
 	if err != nil {
-		return plumbing.ZeroHash, err
+		return none, nil, err
 	}
 	sig := object.Signature{Name: "memgraph", Email: "sync@memgraph.invalid", When: time.Now().UTC()}
 	c := &object.Commit{Author: sig, Committer: sig, Message: message, TreeHash: tree}
 	if !parent.IsZero() {
 		c.ParentHashes = []plumbing.Hash{parent}
 	}
-	return r.store(c)
+	h, err := r.store(c)
+	return h, append(send, tree, h), err
 }
 
-// push sends commit to main. It never forces.
-func (r *remote) push(commit plumbing.Hash) error {
-	if err := r.repo.Storer.SetReference(plumbing.NewHashReference(mainRef, commit)); err != nil {
-		return err
-	}
+// push moves main from old to commit, sending objects. The server applies it
+// only if main still is old, and commit's parent is old, so it never rewrites.
+func (r *remote) push(old, commit plumbing.Hash, objects []plumbing.Hash) error {
 	ctx, cancel := context.WithTimeout(context.Background(), netTimeout)
 	defer cancel()
-	return r.r.PushContext(ctx, &git.PushOptions{RemoteName: "origin", Auth: r.auth,
-		RefSpecs: []config.RefSpec{"refs/heads/main:refs/heads/main"}})
+	session, err := r.client.NewReceivePackSession(r.end, r.auth)
+	if err != nil {
+		return err
+	}
+	defer session.Close()
+	ar, err := session.AdvertisedReferencesContext(ctx)
+	if err != nil {
+		return err
+	}
+	if now := ar.References[mainRef.String()]; now != old {
+		return errors.New("server moved")
+	}
+	req := packp.NewReferenceUpdateRequestFromCapabilities(ar.Capabilities)
+	req.Commands = []*packp.Command{{Name: mainRef, Old: old, New: commit}}
+	var pack bytes.Buffer
+	if _, err := packfile.NewEncoder(&pack, r.repo.Storer, false).Encode(objects, 10); err != nil {
+		return err
+	}
+	req.Packfile = io.NopCloser(&pack)
+	report, err := session.ReceivePack(ctx, req)
+	if err != nil {
+		return err
+	}
+	if report == nil {
+		return errors.New("server did not report the result of the push")
+	}
+	return report.Error()
 }
