@@ -241,21 +241,18 @@ func TestRecallFormatIndex(t *testing.T) {
 	dir := t.TempDir()
 	cfg := &Config{
 		MemoryDir:    dir,
-		GlobalConfig: GlobalConfig{AutoIndex: true, SearchWeights: SearchWeights{TFIDF: 1.0, Phrase: 3.0, Exact: 2.0, Recency24h: 1.2, Recency7d: 1.1, Type: 1.15, Tag: 1.5}},
+		GlobalConfig: GlobalConfig{SearchWeights: SearchWeights{TFIDF: 1.0, Phrase: 3.0, Exact: 2.0, Recency24h: 1.2, Recency7d: 1.1, Type: 1.15, Tag: 1.5}},
 	}
 
 	content := "[diag] Problem found\nThe laptop never sleeps.\n\n[fix] Solution\nDisable wake sources."
 	writeMemoryFromInput(cfg, content, "project", "testproj", "default", []string{"test"})
 
-	// Build search index
-	index, err := buildSearchIndex(dir)
-	if err != nil {
-		t.Fatalf("failed to build index: %v", err)
-	}
-
-	results := searchMemories(index, "laptop sleeps", SearchOptions{
+	results, err := searchMemoryDir(dir, "laptop sleeps", SearchOptions{
 		Weights: cfg.GlobalConfig.SearchWeights,
 	})
+	if err != nil {
+		t.Fatalf("search: %v", err)
+	}
 
 	if len(results) == 0 {
 		t.Fatal("expected at least 1 search result")

@@ -17,7 +17,7 @@ const exitStaleFound = 90
 func handleVerify(cfg *Config) {
 	_, opts := parseCommandArgs(os.Args[2:])
 
-	index, err := loadSearchIndex(cfg.MemoryDir)
+	all, err := loadMemories(cfg.MemoryDir)
 	if err != nil {
 		if jsonOutput {
 			errorResponse(92, "resource_not_found", "Memory directory not found", false)
@@ -33,7 +33,7 @@ func handleVerify(cfg *Config) {
 	}
 
 	var memories []Memory
-	for _, memory := range index.Memories {
+	for _, memory := range all {
 		if projectFilter != "" && memory.Project != projectFilter {
 			continue
 		}
@@ -80,10 +80,6 @@ func handleVerify(cfg *Config) {
 			}
 		}
 		results = append(results, result)
-	}
-
-	if marked > 0 {
-		updateSearchIndex(cfg)
 	}
 
 	// Stale first, then unknown: the reader's attention goes where the

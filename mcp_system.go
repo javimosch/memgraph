@@ -90,7 +90,7 @@ func mcpProfile(cfg *Config, args map[string]any) string {
 	cfg = resolveMCPConfig(cfg, projectName)
 	sessionFilter := mcpGetString(args, "session")
 
-	index, err := loadSearchIndex(cfg.MemoryDir)
+	memories, err := loadMemories(cfg.MemoryDir)
 	if err != nil {
 		return "Memory directory not found. Run memgraph_init first."
 	}
@@ -108,7 +108,7 @@ func mcpProfile(cfg *Config, args map[string]any) string {
 		projectFilter = projectName
 	}
 
-	for _, memory := range index.Memories {
+	for _, memory := range memories {
 		if projectFilter != "" && memory.Project != projectFilter {
 			continue
 		}
@@ -350,7 +350,6 @@ func mcpDemo(cfg *Config, args map[string]any) string {
 		outPath := filepath.Join(cfg.MemoryDir, fmt.Sprintf("memory_%s.md", memoryID))
 		_ = writeMemoryBytes(outPath, []byte(formatMemoryFile(memory)))
 	}
-	updateSearchIndex(cfg)
 
 	out, _ := json.Marshal(map[string]any{
 		"created": len(samples),

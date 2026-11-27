@@ -27,8 +27,7 @@ func mcpRecall(cfg *Config, args map[string]any) string {
 	limit := mcpGetInt(args, "limit", 10)
 	tags := mcpGetStringSlice(args, "tags")
 
-	index, err := loadSearchIndex(cfg.MemoryDir)
-	if err != nil {
+	if _, err := os.Stat(cfg.MemoryDir); err != nil {
 		return "No memories found (directory not initialized)."
 	}
 
@@ -41,9 +40,10 @@ func mcpRecall(cfg *Config, args map[string]any) string {
 		searchOpts.Project = projectName
 	}
 
-	results := searchMemories(index, query, searchOpts)
-	if limit > 0 && len(results) > limit {
-		results = results[:limit]
+	searchOpts.Limit = limit
+	results, err := searchMemoryDir(cfg.MemoryDir, query, searchOpts)
+	if err != nil {
+		return fmt.Sprintf("Search failed: %v", err)
 	}
 
 	if len(results) == 0 {
@@ -199,7 +199,6 @@ func mcpSave(cfg *Config, args map[string]any) string {
 	if err := writeMemoryBytes(filePath, []byte(content)); err != nil {
 		return fmt.Sprintf("Failed to write memory file: %v", err)
 	}
-	updateSearchIndex(cfg)
 
 	out, _ := json.Marshal(map[string]any{
 		"id":      memoryID,
@@ -220,7 +219,7 @@ func mcpList(cfg *Config, args map[string]any) string {
 	tags := mcpGetStringSlice(args, "tags")
 	limit := mcpGetInt(args, "limit", 50)
 
-	index, err := loadSearchIndex(cfg.MemoryDir)
+	all, err := loadMemories(cfg.MemoryDir)
 	if err != nil {
 		return "No memories found (directory not initialized)."
 	}
@@ -231,7 +230,7 @@ func mcpList(cfg *Config, args map[string]any) string {
 	}
 
 	var memories []Memory
-	for _, memory := range index.Memories {
+	for _, memory := range all {
 		if projectFilter != "" && memory.Project != projectFilter {
 			continue
 		}
@@ -309,7 +308,6 @@ func mcpEdit(cfg *Config, args map[string]any) string {
 	if err := writeMemoryBytes(memoryFile, []byte(formatMemoryFile(memory))); err != nil {
 		return fmt.Sprintf("Cannot write memory file: %v", err)
 	}
-	updateSearchIndex(cfg)
 
 	out, _ := json.Marshal(map[string]any{
 		"id":          id,
@@ -353,7 +351,6 @@ func mcpDelete(cfg *Config, args map[string]any) string {
 	if err := os.Remove(memoryFile); err != nil {
 		return fmt.Sprintf("Cannot delete memory file: %v", err)
 	}
-	updateSearchIndex(cfg)
 
 	out, _ := json.Marshal(map[string]any{
 		"id":     id,
@@ -367,13 +364,13 @@ func mcpSessions(cfg *Config, args map[string]any) string {
 	projectName := mcpGetString(args, "project")
 	cfg = resolveMCPConfig(cfg, projectName)
 
-	index, err := loadSearchIndex(cfg.MemoryDir)
+	memories, err := loadMemories(cfg.MemoryDir)
 	if err != nil {
 		return "No memories found (directory not initialized)."
 	}
 
 	groups := map[string]*sessionInfo{}
-	for _, memory := range index.Memories {
+	for _, memory := range memories {
 		info := groups[memory.Session]
 		if info == nil {
 			info = &sessionInfo{Session: memory.Session}
@@ -478,7 +475,6 @@ func mcpImport(cfg *Config, args map[string]any) string {
 			imported++
 		}
 	}
-	updateSearchIndex(cfg)
 
 	out, _ := json.Marshal(map[string]any{
 		"imported": imported,

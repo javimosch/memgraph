@@ -395,9 +395,6 @@ func writeSkillGraph(skills []skillInput, targetDir string, cfg *Config) (*skill
 		return nil, 0, 0, fmt.Errorf("failed to write graph index: %w", err)
 	}
 
-	if cfg != nil {
-		updateSearchIndex(cfg)
-	}
 
 	return graph, skillCount, namespaceCount, nil
 }

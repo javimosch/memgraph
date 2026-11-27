@@ -57,7 +57,7 @@ type serverState struct {
 	mu       sync.RWMutex
 	graph    *GraphIndex
 	nodeMap  map[string]Memory
-	index    *SearchIndex
+	memories map[string]Memory
 	cfg      *Config
 	syncDirs []string
 	lastSync time.Time
@@ -111,12 +111,12 @@ func (s *serverState) syncNow() error {
 		return err
 	}
 
-	idx, err := loadSearchIndex(s.cfg.MemoryDir)
+	memories, err := loadMemories(s.cfg.MemoryDir)
 	if err != nil {
-		idx = s.index
+		memories = s.memories
 	}
 
-	newGraph, newNodeMap, err := loadGraphForServe(s.cfg.MemoryDir, idx)
+	newGraph, newNodeMap, err := loadGraphForServe(s.cfg.MemoryDir, memories)
 	if err != nil {
 		newGraph = &GraphIndex{Version: 1, Nodes: graph.Nodes, Edges: graph.Edges}
 		newNodeMap = make(map[string]Memory, len(graph.Nodes))
@@ -128,7 +128,7 @@ func (s *serverState) syncNow() error {
 	s.mu.Lock()
 	s.graph = newGraph
 	s.nodeMap = newNodeMap
-	s.index = idx
+	s.memories = memories
 	s.lastSync = time.Now().UTC()
 	s.mu.Unlock()
 
@@ -176,11 +176,11 @@ func handleServe(cfg *Config) {
 	}
 	addr := fmt.Sprintf("0.0.0.0:%d", port)
 
-	index, err := loadSearchIndex(cfg.MemoryDir)
+	memories, err := loadMemories(cfg.MemoryDir)
 	if err != nil {
-		log.Printf("notice: loadSearchIndex: %v", err)
+		log.Printf("notice: loadMemories: %v", err)
 	}
-	graph, nodeMap, err := loadGraphForServe(cfg.MemoryDir, index)
+	graph, nodeMap, err := loadGraphForServe(cfg.MemoryDir, memories)
 	if err != nil {
 		log.Printf("notice: loadGraphForServe: %v", err)
 		graph = &GraphIndex{Version: 1}
@@ -202,7 +202,7 @@ func handleServe(cfg *Config) {
 	state := &serverState{
 		graph:    graph,
 		nodeMap:  nodeMap,
-		index:    index,
+		memories: memories,
 		cfg:      cfg,
 		syncDirs: syncDirs,
 		lastSync: time.Now().UTC().Add(-24 * time.Hour),
@@ -419,40 +419,6 @@ func apiSearchHandlerV2(w http.ResponseWriter, r *http.Request, graph *GraphInde
 		"count":   len(items),
 		"results": items,
 	})
-}
-
-func apiSearchHandler(w http.ResponseWriter, r *http.Request, cfg *Config, index *SearchIndex) {
-	if r.Method != http.MethodGet {
-		writeJSONError(w, http.StatusMethodNotAllowed, "method_not_allowed", "Method not allowed", false)
-		return
-	}
-	if index == nil {
-		writeJSONError(w, http.StatusServiceUnavailable, "search_index_empty", "Search index is empty", false)
-		return
-	}
-	q := r.URL.Query().Get("q")
-	project := r.URL.Query().Get("project")
-	tags := parseTagsValue(r.URL.Query().Get("tags"))
-	limit := 0
-	if v := r.URL.Query().Get("limit"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
-			limit = n
-		}
-	}
-
-	opts := SearchOptions{
-		Project: project,
-		Tags:    tags,
-		Weights: cfg.GlobalConfig.SearchWeights,
-	}
-	results := searchMemories(index, q, opts)
-	if limit > 0 && len(results) > limit {
-		results = results[:limit]
-	}
-	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(results); err != nil && !isClientDisconnect(err) {
-		log.Printf("failed to encode search results: %v", err)
-	}
 }
 
 func serveFileFromFS(w http.ResponseWriter, r *http.Request, staticFS fs.FS, name, contentType string) {

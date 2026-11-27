@@ -118,8 +118,6 @@ func handleSupersede(cfg *Config) {
 		os.Exit(110)
 	}
 
-	updateSearchIndex(cfg)
-
 	if jsonOutput {
 		json.NewEncoder(os.Stdout).Encode(map[string]interface{}{
 			"id":            oldMemory.ID,

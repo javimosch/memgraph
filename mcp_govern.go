@@ -78,7 +78,6 @@ func mcpSupersede(cfg *Config, args map[string]any) string {
 	if err := writeMemoryBytes(oldFile, []byte(formatMemoryFile(oldMemory))); err != nil {
 		return fmt.Sprintf("Cannot write memory file: %v", err)
 	}
-	updateSearchIndex(cfg)
 
 	out, _ := json.Marshal(map[string]any{
 		"id":            oldMemory.ID,
@@ -95,7 +94,7 @@ func mcpSupersede(cfg *Config, args map[string]any) string {
 func mcpVerify(cfg *Config, args map[string]any) string {
 	cfg = resolveMCPConfig(cfg, mcpGetString(args, "project"))
 
-	index, err := loadSearchIndex(cfg.MemoryDir)
+	all, err := loadMemories(cfg.MemoryDir)
 	if err != nil {
 		return "Memory directory not found"
 	}
@@ -105,7 +104,7 @@ func mcpVerify(cfg *Config, args map[string]any) string {
 	limit := mcpGetInt(args, "limit", 0)
 
 	var memories []Memory
-	for _, memory := range index.Memories {
+	for _, memory := range all {
 		if memory.SupersededBy != "" {
 			continue
 		}
@@ -142,9 +141,6 @@ func mcpVerify(cfg *Config, args map[string]any) string {
 				Claims:  claims,
 			})
 		}
-	}
-	if marked > 0 {
-		updateSearchIndex(cfg)
 	}
 
 	out, _ := json.Marshal(map[string]any{

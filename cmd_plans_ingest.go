@@ -113,10 +113,6 @@ func ingestPlans(targetDir string, cfg *Config, extraDirs ...string) int {
 		return 0
 	}
 
-	if cfg != nil {
-		updateSearchIndex(cfg)
-	}
-
 	return len(allPlans)
 }
 

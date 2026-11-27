@@ -98,7 +98,6 @@ func handleConfig(cfg *Config) {
 		fmt.Println("Global Configuration:")
 		fmt.Printf("  Default Memory Type: %s\n", cfg.GlobalConfig.DefaultMemoryType)
 		fmt.Printf("  Max Memory Size: %d bytes\n", cfg.GlobalConfig.MaxMemorySize)
-		fmt.Printf("  Auto Index: %v\n", cfg.GlobalConfig.AutoIndex)
 		fmt.Println()
 		fmt.Println("Configuration File:")
 		fmt.Printf("  %s\n", filepath.Join(globalDir, "config.json"))
@@ -143,7 +142,7 @@ func handleVersion() {
 func handleProfile(cfg *Config) {
 	_, opts := parseCommandArgs(os.Args[2:])
 
-	index, err := loadSearchIndex(cfg.MemoryDir)
+	memories, err := loadMemories(cfg.MemoryDir)
 	if err != nil {
 		if jsonOutput {
 			errorResponse(92, "resource_not_found", "Memory directory not found", false)
@@ -161,7 +160,7 @@ func handleProfile(cfg *Config) {
 	recent24h := 0
 	recent7d := 0
 
-	for _, memory := range index.Memories {
+	for _, memory := range memories {
 		if opts.Project != "" && memory.Project != opts.Project {
 			continue
 		}

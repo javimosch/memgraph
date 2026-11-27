@@ -268,8 +268,8 @@ func syncError(project string, joining bool, err error) int {
 	return code
 }
 
-// syncOne syncs a linked project, rebuilds its search index and returns an
-// exit code. enabling marks the first sync of 'cloud enable'.
+// syncOne syncs a linked project and returns an exit code. enabling marks the
+// first sync of 'cloud enable'.
 func syncOne(cfg *Config, project string, a cloudArgs, enabling bool) int {
 	store := cloudStore(project)
 	link, err := store.Link()
@@ -291,18 +291,6 @@ func syncOne(cfg *Config, project string, a cloudArgs, enabling bool) int {
 	}
 	if err != nil {
 		return syncError(project, false, err)
-	}
-	if len(res.Downloaded)+len(res.DeletedLocal) > 0 {
-		// Regardless of auto_index: recall must see what just arrived.
-		unlock := lockMemoryDir(&Config{MemoryDir: link.MemoryDir})
-		index, err := buildSearchIndex(link.MemoryDir)
-		if err == nil {
-			err = saveSearchIndex(link.MemoryDir, index)
-		}
-		unlock()
-		if err != nil {
-			fmt.Fprintln(os.Stderr, "memgraph: warning: search index not rebuilt:", err)
-		}
 	}
 	st, err := store.Load()
 	if err != nil {

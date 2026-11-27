@@ -320,12 +320,3 @@ func findMemoryFileByID(memoryPath, memoryID string) (string, bool) {
 	}
 	return "", false
 }
-
-func updateSearchIndex(cfg *Config) {
-	if cfg.GlobalConfig.AutoIndex {
-		index, err := buildSearchIndex(cfg.MemoryDir)
-		if err == nil {
-			_ = saveSearchIndex(cfg.MemoryDir, index)
-		}
-	}
-}

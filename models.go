@@ -23,12 +23,14 @@ type SearchWeights struct {
 }
 
 type GlobalConfig struct {
-	DefaultMemoryType string        `json:"default_memory_type"`
-	MaxMemorySize     int           `json:"max_memory_size"`
-	AutoIndex         bool          `json:"auto_index"`
-	AutoSyncDir       string        `json:"auto_sync_dir,omitempty"`
-	AutoSync          bool          `json:"auto_sync,omitempty"`
-	SearchWeights     SearchWeights `json:"search_weights"`
+	DefaultMemoryType string `json:"default_memory_type"`
+	MaxMemorySize     int    `json:"max_memory_size"`
+	// AutoIndex does nothing since search stopped keeping an index. It stays
+	// so that existing config files keep their meaning when rewritten.
+	AutoIndex     bool          `json:"auto_index"`
+	AutoSyncDir   string        `json:"auto_sync_dir,omitempty"`
+	AutoSync      bool          `json:"auto_sync,omitempty"`
+	SearchWeights SearchWeights `json:"search_weights"`
 }
 
 type Link struct {
@@ -87,14 +89,14 @@ type GraphIndex struct {
 	Edges   []GraphEdge `json:"edges"`
 }
 
-type SearchIndex struct {
-	Version       int                         // index format version
-	Source        string                      // memorySource of the files indexed; keep second, see indexSource
-	TermFreq      map[string]map[string]int   // term -> (memoryID -> frequency)
-	TermPositions map[string]map[string][]int // term -> (memoryID -> sorted token positions)
-	DocFreq       map[string]int              // term -> document frequency
-	DocCount      int                         // total number of documents
-	Memories      map[string]Memory           // memoryID -> Memory metadata
+// searchDoc is what scoring needs: one memory's query terms, and how common
+// they are among all the memories searched.
+type searchDoc struct {
+	TermFreq      map[string]int   // term -> frequency in Memory
+	TermPositions map[string][]int // term -> sorted token positions in Memory
+	DocFreq       map[string]int   // term -> memories that hold it
+	DocCount      int              // memories searched
+	Memory        Memory           // the one being scored
 }
 
 type SearchResult struct {
@@ -120,6 +122,13 @@ type SearchOptions struct {
 	Tags    []string
 	TagOnly bool
 	Weights SearchWeights
+
+	// Limit keeps only the best results, 0 all of them. Search then holds
+	// little more than that many memories, whatever the number of matches.
+	Limit int
+	// HideSuperseded leaves superseded memories out before Limit applies.
+	// One that matches the whole query still hides partial matches.
+	HideSuperseded bool
 }
 
 // Claim is one externally checkable assertion extracted from a memory's text:

@@ -2,11 +2,16 @@
 
 ## Unreleased
 
-- Fixed: search could use an out-of-date `search_index.json` and silently miss
-  memories added or changed by `rsync`, git, a hand edit, with `auto_index` off,
-  or when a rebuild was killed. The index now records the files it was built
-  from and is rebuilt when they differ; it is also saved atomically. An index
-  from an older version is rebuilt once.
+- Search reads the memory files directly instead of keeping
+  `search_index.json`, and uses far less memory: measured on 3,688 memories, a
+  search limited to 10 results went from about 290 MB to 16 MB in similar time.
+  Saving, editing and syncing no longer rebuild anything. Each search reads
+  every file, so very large projects on slow disks may notice. Matches and
+  scores are as before; equal scores now list the newest ID first.
+- Fixed: search could silently miss memories added or changed by `rsync`, git,
+  a hand edit, with `auto_index` off, or after an interrupted rebuild.
+- `auto_index` no longer does anything. Old `search_index.json` files are
+  removed when a memory directory is next read.
 - New `memgraph cloud` commands: opt-in, manual sync of a project between
   machines through a git smart-HTTP server, with conflict copies, local-only
   memories, secret scanning and deletion guards. See `docs/cloud-sync.md`.

@@ -17,7 +17,7 @@ import (
 func handleList(cfg *Config) {
 	_, opts := parseCommandArgs(os.Args[2:])
 
-	index, err := loadSearchIndex(cfg.MemoryDir)
+	all, err := loadMemories(cfg.MemoryDir)
 	if err != nil {
 		if jsonOutput {
 			errorResponse(92, "resource_not_found", "Memory directory not found", false)
@@ -32,7 +32,7 @@ func handleList(cfg *Config) {
 	if cfg.ScopeResolved {
 		projectFilter = ""
 	}
-	for _, memory := range index.Memories {
+	for _, memory := range all {
 		if projectFilter != "" && memory.Project != projectFilter {
 			continue
 		}
@@ -77,7 +77,7 @@ type sessionInfo struct {
 func handleSessions(cfg *Config) {
 	_, _ = parseCommandArgs(os.Args[2:])
 
-	index, err := loadSearchIndex(cfg.MemoryDir)
+	memories, err := loadMemories(cfg.MemoryDir)
 	if err != nil {
 		if jsonOutput {
 			errorResponse(92, "resource_not_found", "Memory directory not found", false)
@@ -88,7 +88,7 @@ func handleSessions(cfg *Config) {
 	}
 
 	groups := map[string]*sessionInfo{}
-	for _, memory := range index.Memories {
+	for _, memory := range memories {
 		info := groups[memory.Session]
 		if info == nil {
 			info = &sessionInfo{Session: memory.Session}
@@ -179,8 +179,6 @@ func handleEdit(cfg *Config) {
 		os.Exit(110)
 	}
 
-	updateSearchIndex(cfg)
-
 	if jsonOutput {
 		json.NewEncoder(os.Stdout).Encode(map[string]interface{}{
 			"id":          memoryID,
@@ -228,8 +226,6 @@ func handleDelete(cfg *Config) {
 		errorResponse(110, "delete_error", fmt.Sprintf("Cannot delete memory file: %v", err), false)
 		os.Exit(110)
 	}
-
-	updateSearchIndex(cfg)
 
 	if jsonOutput {
 		json.NewEncoder(os.Stdout).Encode(map[string]interface{}{
@@ -338,8 +334,6 @@ func handleImport(cfg *Config) {
 		}
 	}
 
-	updateSearchIndex(cfg)
-
 	if jsonOutput {
 		json.NewEncoder(os.Stdout).Encode(map[string]interface{}{
 			"imported": imported,
@@ -444,8 +438,6 @@ func handleDemo(cfg *Config) {
 		outPath := filepath.Join(cfg.MemoryDir, fmt.Sprintf("memory_%s.md", memoryID))
 		_ = writeMemoryBytes(outPath, []byte(formatMemoryFile(memory)))
 	}
-
-	updateSearchIndex(cfg)
 
 	if jsonOutput {
 		json.NewEncoder(os.Stdout).Encode(map[string]interface{}{
