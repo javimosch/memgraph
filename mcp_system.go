@@ -337,6 +337,7 @@ func mcpDemo(cfg *Config, args map[string]any) string {
 		{"Import supports JSON arrays and JSONL objects.", "reference", "demo", "import,json"},
 	}
 
+	defer lockMemoryDir(cfg)()
 	_ = os.MkdirAll(cfg.MemoryDir, 0755)
 	baseTime := time.Now().UnixNano()
 	for i, sample := range samples {
@@ -347,7 +348,7 @@ func mcpDemo(cfg *Config, args map[string]any) string {
 			Created: time.Now().UTC().Add(time.Duration(-i) * time.Second), Content: sample.c,
 		}
 		outPath := filepath.Join(cfg.MemoryDir, fmt.Sprintf("memory_%s.md", memoryID))
-		_ = os.WriteFile(outPath, []byte(formatMemoryFile(memory)), 0644)
+		_ = writeMemoryBytes(outPath, []byte(formatMemoryFile(memory)))
 	}
 	updateSearchIndex(cfg)
 

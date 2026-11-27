@@ -137,6 +137,7 @@ func handleEdit(cfg *Config) {
 	memoryID := positional[0]
 	newContent := strings.Join(positional[1:], " ")
 
+	defer lockMemoryDir(cfg)()
 	memoryFile, ok := findMemoryFileByID(cfg.MemoryDir, memoryID)
 	if !ok {
 		errorResponse(92, "memory_not_found", fmt.Sprintf("Memory with ID %s not found", memoryID), false)
@@ -173,7 +174,7 @@ func handleEdit(cfg *Config) {
 		memory.Tags = opts.Tags
 	}
 
-	if err := os.WriteFile(memoryFile, []byte(formatMemoryFile(memory)), 0644); err != nil {
+	if err := writeMemoryBytes(memoryFile, []byte(formatMemoryFile(memory))); err != nil {
 		errorResponse(110, "write_error", fmt.Sprintf("Cannot write memory file: %v", err), false)
 		os.Exit(110)
 	}
@@ -199,6 +200,7 @@ func handleDelete(cfg *Config) {
 	}
 
 	memoryID := positional[0]
+	defer lockMemoryDir(cfg)()
 	memoryFile, ok := findMemoryFileByID(cfg.MemoryDir, memoryID)
 	if !ok {
 		errorResponse(92, "memory_not_found", fmt.Sprintf("Memory with ID %s not found", memoryID), false)
@@ -265,6 +267,7 @@ func handleImport(cfg *Config) {
 		os.Exit(85)
 	}
 
+	defer lockMemoryDir(cfg)()
 	_ = os.MkdirAll(cfg.MemoryDir, 0755)
 	imported := 0
 	baseTime := time.Now().UnixNano()
@@ -330,7 +333,7 @@ func handleImport(cfg *Config) {
 		}
 
 		outPath := filepath.Join(cfg.MemoryDir, fmt.Sprintf("memory_%s.md", memoryID))
-		if err := os.WriteFile(outPath, []byte(formatMemoryFile(memory)), 0644); err == nil {
+		if err := writeMemoryBytes(outPath, []byte(formatMemoryFile(memory))); err == nil {
 			imported++
 		}
 	}
@@ -428,6 +431,7 @@ func handleDemo(cfg *Config) {
 		{"Import supports JSON arrays and JSONL objects.", "reference", "demo", "import,json"},
 	}
 
+	defer lockMemoryDir(cfg)()
 	_ = os.MkdirAll(cfg.MemoryDir, 0755)
 	baseTime := time.Now().UnixNano()
 	for i, sample := range samples {
@@ -438,7 +442,7 @@ func handleDemo(cfg *Config) {
 			Created: time.Now().UTC().Add(time.Duration(-i) * time.Second), Content: sample.c,
 		}
 		outPath := filepath.Join(cfg.MemoryDir, fmt.Sprintf("memory_%s.md", memoryID))
-		_ = os.WriteFile(outPath, []byte(formatMemoryFile(memory)), 0644)
+		_ = writeMemoryBytes(outPath, []byte(formatMemoryFile(memory)))
 	}
 
 	updateSearchIndex(cfg)

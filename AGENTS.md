@@ -71,6 +71,17 @@ No default sync directory. The user must pass `--sync-dir`. Multiple comma-separ
 - `shared-keyword` and `similar` edges are hidden by default in the UI
 - Namespace nodes represent project clusters; skill nodes are members
 
+### Cloud sync (`internal/cloudsync`, rules in `docs/cloud-sync.md`)
+- **Every writer of memory files takes `lockMemoryDir` once, before its first read,
+  and writes with `writeMemoryBytes`.** The lock is not reentrant.
+- **`formatMemoryFile` drops unknown frontmatter keys.** A new field needs the model,
+  parser and writer. `local` also goes into `LedgerSnapshot`, or deleted local-only
+  memories would be uploaded with the ledger.
+- **Never use go-git with a file path remote.** Its in-process server accepts stale
+  pushes; `CheckURL` allows HTTP(S) only.
+- **Cloud commands are not exposed over MCP**, so agents do not upload on their own.
+- Engine tests run a real `git http-backend`, so tests need git installed.
+
 ### Docs
 - GitHub Pages serves from `/docs` on `master` branch
 - Docs must NOT reference machine-specific paths (no `~/.agents/skills` as a default, no `~/handoffs`)

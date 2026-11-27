@@ -73,6 +73,9 @@ func parseMemory(content, filename string) Memory {
 				if tag != "" {
 					memory.Tags = append(memory.Tags, tag)
 				}
+			} else if strings.HasPrefix(line, "local:") {
+				memory.Local = strings.TrimSpace(strings.TrimPrefix(line, "local:")) == "true"
+				inTagsList = false
 			} else if strings.HasPrefix(line, "stale:") {
 				value := strings.TrimSpace(strings.TrimPrefix(line, "stale:"))
 				memory.Stale = value == "true"
@@ -270,6 +273,9 @@ func formatMemoryFile(memory Memory) string {
 	// Verification and supersession keys are written only when set, so a
 	// memory that has never been verified keeps its original bytes.
 	extras := ""
+	if memory.Local {
+		extras += "local: true\n"
+	}
 	if memory.Stale {
 		extras += "stale: true\n"
 	}

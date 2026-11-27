@@ -72,8 +72,9 @@ func writeMemoryFromInput(cfg *Config, content, memoryType, project, session str
 		Content:     content,
 	}
 
+	defer lockMemoryDir(cfg)()
 	_ = os.MkdirAll(cfg.MemoryDir, 0755)
-	if err := os.WriteFile(filePath, []byte(formatMemoryFile(memory)), 0644); err != nil {
+	if err := writeMemoryBytes(filePath, []byte(formatMemoryFile(memory))); err != nil {
 		errorResponse(92, "resource_error", fmt.Sprintf("Failed to write memory file: %v", err), false)
 		os.Exit(92)
 	}

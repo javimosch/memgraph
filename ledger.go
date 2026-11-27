@@ -38,6 +38,7 @@ func snapshotOf(memory Memory) *LedgerSnapshot {
 		Tags:        memory.Tags,
 		Created:     memory.Created.UTC().Format(time.RFC3339),
 		Content:     memory.Content,
+		Local:       memory.Local,
 	}
 }
 

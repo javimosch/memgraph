@@ -144,6 +144,7 @@ func printVerifyHuman(results []VerifyResult, counts map[string]int, marked int,
 // markMemory writes (or clears) the stale flag and stamps the check time. It
 // rewrites nothing else, and returns false when the file already said this.
 func markMemory(cfg *Config, memoryID string, stale bool) bool {
+	defer lockMemoryDir(cfg)()
 	memoryFile, ok := findMemoryFileByID(cfg.MemoryDir, memoryID)
 	if !ok {
 		return false
@@ -158,7 +159,7 @@ func markMemory(cfg *Config, memoryID string, stale bool) bool {
 	}
 	memory.Stale = stale
 	memory.Verified = time.Now().UTC()
-	if err := os.WriteFile(memoryFile, []byte(formatMemoryFile(memory)), 0644); err != nil {
+	if err := writeMemoryBytes(memoryFile, []byte(formatMemoryFile(memory))); err != nil {
 		return false
 	}
 	return true

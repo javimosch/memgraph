@@ -27,6 +27,7 @@ var valueFlags = map[string]bool{
 	"--project":       true,
 	"--query":         true,
 	"--reason":        true,
+	"--server":        true,
 	"--remove":        true,
 	"--session":       true,
 	"--since":         true,
@@ -253,6 +254,8 @@ func main() {
 		handleFeedback(&cfg)
 	case "mcp":
 		handleMCP(&cfg)
+	case "cloud":
+		handleCloud(&cfg)
 	default:
 		if jsonOutput {
 			errorResponse(85, "unknown_command", fmt.Sprintf("Unknown command: %s. Run 'memgraph --help' for available commands.", command), false)

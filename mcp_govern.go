@@ -19,6 +19,7 @@ func mcpSupersede(cfg *Config, args map[string]any) string {
 	}
 	cfg = resolveMCPConfig(cfg, mcpGetString(args, "project"))
 
+	defer lockMemoryDir(cfg)()
 	oldFile, ok := findMemoryFileByID(cfg.MemoryDir, id)
 	if !ok {
 		return fmt.Sprintf("Memory %s not found", id)
@@ -53,7 +54,7 @@ func mcpSupersede(cfg *Config, args map[string]any) string {
 		if len(tags) == 0 {
 			tags = oldMemory.Tags
 		}
-		newID = writeSupersedingMemory(cfg, text, memoryType, oldMemory.Project, oldMemory.Session, tags)
+		newID = writeSupersedingMemory(cfg, text, memoryType, oldMemory.Project, oldMemory.Session, tags, oldMemory.Local)
 	default:
 		return "Error: replacement required — pass 'with' (existing memory ID) or 'text' (new content)"
 	}
@@ -74,7 +75,7 @@ func mcpSupersede(cfg *Config, args map[string]any) string {
 	oldMemory.SupersededBy = newID
 	oldMemory.SupersededAt = now
 	oldMemory.SupersededReason = entry.Reason
-	if err := os.WriteFile(oldFile, []byte(formatMemoryFile(oldMemory)), 0644); err != nil {
+	if err := writeMemoryBytes(oldFile, []byte(formatMemoryFile(oldMemory))); err != nil {
 		return fmt.Sprintf("Cannot write memory file: %v", err)
 	}
 	updateSearchIndex(cfg)

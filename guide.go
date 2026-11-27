@@ -18,7 +18,7 @@ func guideData() map[string]interface{} {
 			"graph":   "SKILL.md and plan files become nodes connected by references, similarity, and shared keywords.",
 			"scoping": "Git-based project scopes live under ~/.memgraph/projects; --memory-dir is the explicit escape hatch.",
 			"agents":  "CLI JSON, stdio MCP, HTTP graph search, and generated Claude Code/OpenCode/Copilot bridges are alternate faces of the same store.",
-			"storage": "No remote service is required. `init`, `remember`, `recall`, and graph ingestion operate locally.",
+			"storage": "No remote service is required. `init`, `remember`, `recall`, and graph ingestion operate locally. `cloud` sync is opt-in per project and never runs on its own.",
 			"server":  "`serve` exposes the graph explorer and JSON APIs; `watch` keeps an indexed skill directory fresh.",
 		},
 		"loop": []string{
@@ -166,6 +166,7 @@ func commandCatalog() map[string]interface{} {
 			{"name": "bridge", "usage": "memgraph bridge <claude-code|opencode|copilot>", "summary": "generate an agent integration"},
 			{"name": "feedback", "usage": "memgraph feedback <message> [options]", "summary": "best-effort dual-write feedback"},
 			{"name": "mcp", "usage": "memgraph mcp", "summary": "run the stdio MCP server"},
+			{"name": "cloud", "usage": "memgraph cloud <login|enable|clone|sync|status|conflicts|local|unlocal|allow|disable>", "summary": "opt-in sync of a project between machines through a git server"},
 			{"name": "guide", "usage": "memgraph guide [--human]", "summary": "print the embedded agent guide"},
 			{"name": "help-json", "usage": "memgraph help-json", "summary": "print this machine-readable catalog"}, {"name": "version", "usage": "memgraph version", "summary": "print the binary version"},
 			{"name": "help", "aliases": []string{"-h", "--help"}, "usage": "memgraph help", "summary": "print the terminal help text"},

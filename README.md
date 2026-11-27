@@ -238,6 +238,11 @@ memgraph watch --sync-dir ~/my-skills --poll-interval 2
 memgraph watch --json
 ```
 
+## Cloud sync (unreleased, client only)
+
+Opt-in, manual sync of one project between your own machines through a git
+server. See [docs/cloud-sync.md](docs/cloud-sync.md).
+
 ## Maintainer
 
 Jarancibia — [@javimosch](https://github.com/javimosch) · [intrane.fr](https://intrane.fr)

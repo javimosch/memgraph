@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased
+
+- New `memgraph cloud` commands: opt-in, manual sync of a project between
+  machines through a git smart-HTTP server, with conflict copies, local-only
+  memories, secret scanning and deletion guards. Client only; see
+  `docs/cloud-sync.md`.
+- Memory files are now written atomically, and writers lock the memory
+  directory (`.memgraph.lock`). Restart long-running `memgraph mcp` processes
+  after upgrading.
+- New `local: true` memory field. `delete` and `supersede` record it in ledger
+  snapshots.
+- Building memgraph now needs Go 1.26 or later, and it has its first
+  dependency, go-git.
+
 ## 1.11.0 — project aliases you can rename, remove, and repair
 
 - Graph explorer UI: the galaxy view is now titled "Memgraph — Galaxy" and

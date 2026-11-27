@@ -56,9 +56,11 @@ type Memory struct {
 	Tags        []string  `json:"tags"`
 	Created     time.Time `json:"created"`
 	Content     string    `json:"content"`
-	FilePath    string    `json:"file_path,omitempty"`
-	Links       []Link    `json:"links,omitempty"`
-	Sections    []Section `json:"sections,omitempty"`
+	// Local keeps a memory on this machine: cloud sync never uploads it.
+	Local    bool      `json:"local,omitempty"`
+	FilePath string    `json:"file_path,omitempty"`
+	Links    []Link    `json:"links,omitempty"`
+	Sections []Section `json:"sections,omitempty"`
 
 	// Verification state, written only by `verify --mark`.
 	Stale    bool      `json:"stale,omitempty"`
@@ -122,7 +124,7 @@ type SearchOptions struct {
 // Claim is one externally checkable assertion extracted from a memory's text:
 // a filesystem path, a URL, or a code repository.
 type Claim struct {
-	Kind    string `json:"kind"`    // path | url | repo
+	Kind    string `json:"kind"` // path | url | repo
 	Value   string `json:"value"`
 	Verdict string `json:"verdict"` // fresh | stale | unknown
 	Detail  string `json:"detail,omitempty"`
@@ -160,6 +162,7 @@ type LedgerSnapshot struct {
 	Tags        []string `json:"tags,omitempty"`
 	Created     string   `json:"created,omitempty"`
 	Content     string   `json:"content,omitempty"`
+	Local       bool     `json:"local,omitempty"`
 }
 
 type ErrorResponse struct {

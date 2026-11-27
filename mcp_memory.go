@@ -178,6 +178,7 @@ func mcpSave(cfg *Config, args map[string]any) string {
 
 	memoryID := fmt.Sprintf("%d", time.Now().UTC().UnixNano())
 	filePath := filepath.Join(cfg.MemoryDir, "memory_"+memoryID+".md")
+	defer lockMemoryDir(cfg)()
 	if err := os.MkdirAll(cfg.MemoryDir, 0755); err != nil {
 		return fmt.Sprintf("Failed to create memory directory: %v", err)
 	}
@@ -195,7 +196,7 @@ func mcpSave(cfg *Config, args map[string]any) string {
 	}
 
 	content := formatMemoryFile(memory)
-	if err := os.WriteFile(filePath, []byte(content), 0644); err != nil {
+	if err := writeMemoryBytes(filePath, []byte(content)); err != nil {
 		return fmt.Sprintf("Failed to write memory file: %v", err)
 	}
 	updateSearchIndex(cfg)
@@ -270,6 +271,7 @@ func mcpEdit(cfg *Config, args map[string]any) string {
 	projectName := mcpGetString(args, "project")
 	cfg = resolveMCPConfig(cfg, projectName)
 
+	defer lockMemoryDir(cfg)()
 	memoryFile, ok := findMemoryFileByID(cfg.MemoryDir, id)
 	if !ok {
 		return fmt.Sprintf("Memory %s not found", id)
@@ -304,7 +306,7 @@ func mcpEdit(cfg *Config, args map[string]any) string {
 		memory.Tags = tags
 	}
 
-	if err := os.WriteFile(memoryFile, []byte(formatMemoryFile(memory)), 0644); err != nil {
+	if err := writeMemoryBytes(memoryFile, []byte(formatMemoryFile(memory))); err != nil {
 		return fmt.Sprintf("Cannot write memory file: %v", err)
 	}
 	updateSearchIndex(cfg)
@@ -327,6 +329,7 @@ func mcpDelete(cfg *Config, args map[string]any) string {
 	projectName := mcpGetString(args, "project")
 	cfg = resolveMCPConfig(cfg, projectName)
 
+	defer lockMemoryDir(cfg)()
 	memoryFile, ok := findMemoryFileByID(cfg.MemoryDir, id)
 	if !ok {
 		return fmt.Sprintf("Memory %s not found", id)
@@ -414,6 +417,7 @@ func mcpImport(cfg *Config, args map[string]any) string {
 		return fmt.Sprintf("Failed to parse import data: %v", err)
 	}
 
+	defer lockMemoryDir(cfg)()
 	_ = os.MkdirAll(cfg.MemoryDir, 0755)
 	imported := 0
 	baseTime := time.Now().UnixNano()
@@ -470,7 +474,7 @@ func mcpImport(cfg *Config, args map[string]any) string {
 		}
 
 		outPath := filepath.Join(cfg.MemoryDir, fmt.Sprintf("memory_%s.md", memoryID))
-		if err := os.WriteFile(outPath, []byte(formatMemoryFile(memory)), 0644); err == nil {
+		if err := writeMemoryBytes(outPath, []byte(formatMemoryFile(memory))); err == nil {
 			imported++
 		}
 	}
