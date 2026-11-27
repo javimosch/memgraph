@@ -135,7 +135,6 @@ func New(opts Options) (_ *Server, err error) {
 	// All git settings come from here, never from user or system config.
 	cfg := [][2]string{
 		{"core.hooksPath", hooks},
-		{"core.fsyncObjectFiles", "true"},
 		{"http.receivepack", "true"},
 		{"receive.fsckObjects", "true"},
 		{"receive.denyDeletes", "true"},
@@ -149,6 +148,7 @@ func New(opts Options) (_ *Server, err error) {
 		{"core.packedGitWindowSize", "16m"},
 		{"core.packedGitLimit", "64m"},
 	}
+	cfg = append(cfg, gitDurability()...)
 	s.env = []string{"PATH=" + os.Getenv("PATH"), "HOME=" + home, "GIT_CONFIG_NOSYSTEM=1",
 		"GIT_CONFIG_COUNT=" + strconv.Itoa(len(cfg))}
 	for i, kv := range cfg {

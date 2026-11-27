@@ -48,7 +48,10 @@ type BackupSummary struct {
 // adminGit runs git without any user or system configuration.
 func (d Data) adminGit(args ...string) (string, error) {
 	settings := []string{"-c", "safe.directory=*", "-c", "pack.threads=1", "-c", "pack.windowMemory=32m",
-		"-c", "core.fsyncObjectFiles=true", "-c", "fetch.fsckObjects=true"}
+		"-c", "fetch.fsckObjects=true"}
+	for _, kv := range gitDurability() {
+		settings = append(settings, "-c", kv[0]+"="+kv[1])
+	}
 	cmd := exec.Command("git", append(settings, args...)...)
 	cmd.Env = []string{"PATH=" + os.Getenv("PATH"), "HOME=/nonexistent", "GIT_CONFIG_NOSYSTEM=1"}
 	var out, errOut bytes.Buffer

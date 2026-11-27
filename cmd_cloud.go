@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"cmp"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -43,6 +44,7 @@ Options: --server <url>, --allow-mass-delete, -y (no confirmation)
          --allow-finding <fingerprint>  with enable or clone, repeatable
 
 cloud local also works before enable, to keep a memory out of the first upload.
+For a deleted memory it keeps only the ledger history here.
 
 Server side: cloud serve, cloud admin (see 'memgraph cloud server-help')`
 
@@ -250,7 +252,8 @@ func syncError(project string, joining bool, err error) int {
 	fmt.Fprintf(os.Stderr, "%s: %v\n", project, err)
 	if blocked != nil {
 		for _, f := range blocked.Findings {
-			fmt.Fprintf(os.Stderr, "  %s:%d %s (fingerprint %s)\n", f.File, f.Line, f.Rule, f.Fingerprint)
+			fmt.Fprintf(os.Stderr, "  %s:%d %s, memory %s (fingerprint %s)\n", f.File, f.Line, f.Rule,
+				cmp.Or(f.MemoryID, "unknown"), f.Fingerprint)
 		}
 		if len(blocked.Findings) > 0 {
 			accept := "'cloud allow <fingerprint> --project " + project + "'"
@@ -258,6 +261,8 @@ func syncError(project string, joining bool, err error) int {
 				accept = "repeat the command with '--allow-finding <fingerprint>'"
 			}
 			fmt.Fprintf(os.Stderr, "Remove it, run 'cloud local <id> --project %s', or %s.\n", project, accept)
+			fmt.Fprintln(os.Stderr, "Deleting a memory copies its text into the ledger. For a deleted one, 'cloud local <id>' "+
+				"keeps that history here. Replace any real secret too.")
 		}
 	}
 	return code
@@ -415,6 +420,55 @@ func join(cfg *Config, a cloudArgs, project, dir string, enabling bool) int {
 		}
 	}
 	return syncOne(cfg, project, a, enabling)
+}
+
+// withholdHistory marks the ledger history of a memory that no longer has a
+// file, so sync keeps it on this machine. It reports false when the ledger
+// knows no memory by exactly this ID.
+func withholdHistory(dir, id string) (bool, error) {
+	lcfg := &Config{MemoryDir: dir}
+	entries, err := readLedger(lcfg)
+	if err != nil {
+		return false, err
+	}
+	known := false
+	for _, e := range entries {
+		if e.MemoryID != id {
+			continue
+		}
+		if e.Action == cloudsync.ActionWithhold {
+			return true, nil
+		}
+		known = true
+	}
+	if !known {
+		return false, nil
+	}
+	return true, appendLedger(lcfg, LedgerEntry{Action: cloudsync.ActionWithhold, MemoryID: id})
+}
+
+// withholdDeleted handles 'cloud local' and 'unlocal' for an ID with no memory
+// file. It reports whether there is a file, which the caller then handles.
+func withholdDeleted(dir, id string, local bool) (hasFile bool) {
+	defer lockMemoryDir(&Config{MemoryDir: dir})()
+	if _, ok := findMemoryFileByID(dir, id); ok {
+		return true
+	}
+	if !local {
+		cloudFail(92, "memory_not_found", fmt.Errorf("memory %s has no file; withheld history cannot be shared again with this command", id))
+	}
+	found, err := withholdHistory(dir, id)
+	if err != nil {
+		cloudFail(110, "ledger", err)
+	}
+	if !found {
+		cloudFail(92, "memory_not_found", fmt.Errorf("memory %s not found, in a file or in the ledger", id))
+	}
+	cloudOutput(map[string]any{"id": id, "status": "history_withheld"}, func() {
+		fmt.Printf("%s is deleted: its ledger history now stays on this machine. The deletion itself still syncs.\n", id)
+		fmt.Println("History already uploaded stays on the server. A real secret should also be replaced.")
+	})
+	return false
 }
 
 // setLocal rewrites a memory with the local-only flag set or cleared.
@@ -644,11 +698,16 @@ func handleCloud(cfg *Config) {
 				if !(cfg.ScopeResolved || memoryDir != "") {
 					cloudFail(80, "missing_argument", errors.New("--project must name a registered project"))
 				}
-				setLocal(cfg.MemoryDir, id, sub == "local")
+				if withholdDeleted(cfg.MemoryDir, id, sub == "local") {
+					setLocal(cfg.MemoryDir, id, sub == "local")
+				}
 				return
 			}
 		}
 		update(func(st *cloudsync.State, link cloudsync.Link) {
+			if !withholdDeleted(link.MemoryDir, id, sub == "local") {
+				return
+			}
 			memory, path := setLocal(link.MemoryDir, id, sub == "local")
 			if memory.Local {
 				st.LocalOnly[memory.ID] = true

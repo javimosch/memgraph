@@ -133,3 +133,15 @@ func TestScan(t *testing.T) {
 		t.Fatalf("false positives: %+v", found)
 	}
 }
+
+func TestPublicLedgerWithholdsMarkedHistory(t *testing.T) {
+	data := []byte(`{"action":"delete","memory_id":"x","snapshot":{"content":"hidden-delete"}}
+{"action":"supersede","memory_id":"x","reason":"hidden-reason"}
+{"action":"delete","memory_id":"y","snapshot":{"content":"kept"}}
+{"action":"withhold","memory_id":"x"}
+`)
+	got := string(PublicLedger(data, nil))
+	if strings.Contains(got, "hidden") || strings.Contains(got, `"x"`) || !strings.Contains(got, "kept") {
+		t.Fatalf("got %s", got)
+	}
+}

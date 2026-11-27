@@ -103,3 +103,29 @@ func TestParseCloudArgs(t *testing.T) {
 		t.Fatal("a mistyped option must not be ignored")
 	}
 }
+
+func TestMarkingADeletedMemoryWithholdsItsHistory(t *testing.T) {
+	cfg := &Config{MemoryDir: t.TempDir()}
+	if err := appendLedger(cfg, LedgerEntry{Action: "delete", MemoryID: "123_4",
+		Snapshot: &LedgerSnapshot{Content: "to be withheld"}}); err != nil {
+		t.Fatal(err)
+	}
+	for id, want := range map[string]bool{"4": false, "nothing": false, "123_4": true} {
+		got, err := withholdHistory(cfg.MemoryDir, id)
+		if err != nil || got != want {
+			t.Errorf("withholdHistory(%q) = %v, %v; want %v", id, got, err, want)
+		}
+	}
+	raw, _ := os.ReadFile(ledgerPath(cfg))
+	if public := string(cloudsync.PublicLedger(raw, nil)); public != "" {
+		t.Fatalf("would upload: %s", public)
+	}
+	if !strings.Contains(string(raw), "to be withheld") {
+		t.Fatal("local history lost")
+	}
+	// Asking twice adds nothing.
+	withholdHistory(cfg.MemoryDir, "123_4")
+	if again, _ := os.ReadFile(ledgerPath(cfg)); string(again) != string(raw) {
+		t.Fatal("marker added twice")
+	}
+}

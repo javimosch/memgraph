@@ -154,11 +154,13 @@ check "sync after deleting the local-only memory" mg vm1 cloud sync
 check "the server never held its text" server_lacks KEEPLOCAL
 mg vm1 --project notes remember "paste $T1" >/dev/null
 expect "a pasted token blocks the sync" 94 "memgraph-token" mg vm1 cloud sync
-mg vm1 --project notes delete "$(find_id vm1 'paste mgc_')" >/dev/null
+PASTED=$(find_id vm1 'paste mgc_')
+mg vm1 --project notes delete "$PASTED" >/dev/null
 # Its ledger snapshot still holds the token, so that blocks too.
 expect "and still blocks after delete, because the ledger keeps the text" 94 "ledger.jsonl" mg vm1 cloud sync
-sh_in vm1 "sed -i '/paste mgc_/d' $(memdir)/ledger.jsonl"
-check "clean again" mg vm1 cloud sync
+expect "withhold the deleted memory's history" 0 "stays on this machine" mg vm1 cloud local "$PASTED" --project notes
+check "clean again, with no hand editing" mg vm1 cloud sync
+check "the local ledger keeps its record" sh_in vm1 "grep -q 'paste mgc_' $(memdir)/ledger.jsonl"
 check "no token reached the server" server_lacks "mgc_"
 
 echo "== server restart and crash"
@@ -223,6 +225,7 @@ expect "the server saw vm2's own address, not the proxy's" 0 "failed logins from
 
 echo "== server log"
 if server_log | grep -qF -e "$T1" -e "$T2"; then bad "no token in the server log"; else ok "no token in the server log"; fi
+if server_log | grep -qiE 'warning|deprecat'; then bad "git printed no warnings" "$(server_log | grep -iE 'warning|deprecat' | head -3)"; else ok "git printed no warnings"; fi
 if server_log | grep -qE 'panic|REFUSING'; then bad "no panic or hook warning" "$(server_log | grep -E 'panic|REFUSING')"; else ok "no panic or hook warning"; fi
 echo "  server log lines mentioning warnings or errors:"
 server_log | grep -iE 'warn|deprecat|error|fatal' | sed 's/^[0-9\/: ]*//' | sort | uniq -c | head -8 | sed 's/^/    /'

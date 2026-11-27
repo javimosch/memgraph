@@ -682,3 +682,38 @@ func TestCorruptStoreRepairsItself(t *testing.T) {
 		}
 	}
 }
+
+// A secret found in a memory survives its deletion, in the ledger.
+func TestWithholdingDeletedHistoryUnblocksAndKeepsTheDelete(t *testing.T) {
+	s, one, two := pair(t)
+	secret := "AKIA" + strings.Repeat("Q", 16)
+	one.write("a", "now with "+secret) // "a" is already on the server
+	one.blocked("secret")
+	one.remove("a")
+	one.ledger(`{"ts":"2026-01-01T00:00:00Z","action":"delete","memory_id":"a","snapshot":{"content":"now with ` + secret + `"}}`)
+	b := one.blocked("secret")
+	if len(b.Findings) != 1 || b.Findings[0].MemoryID != "a" {
+		t.Fatalf("the finding must name the memory: %+v", b.Findings)
+	}
+	one.ledger(`{"ts":"2026-01-01T00:00:01Z","action":"withhold","memory_id":"a"}`)
+	one.sync()
+	two.sync()
+	if two.read("a") != "" || slices.Contains(s.files(), "memory_a.md") {
+		t.Fatal("the deletion did not travel")
+	}
+	if strings.Contains(s.everything(), secret) || strings.Contains(s.everything(), "withhold") {
+		t.Fatal("history reached the server")
+	}
+	local, _ := os.ReadFile(filepath.Join(one.dir, LedgerName))
+	if !strings.Contains(string(local), secret) {
+		t.Fatal("the local ledger must keep its record")
+	}
+}
+
+func TestFindingsInMemoryFilesNameTheMemory(t *testing.T) {
+	_, one, _ := pair(t)
+	one.write("zed", "AKIA"+strings.Repeat("Q", 16))
+	if b := one.blocked("secret"); b.Findings[0].MemoryID != "zed" {
+		t.Fatalf("%+v", b.Findings)
+	}
+}

@@ -10,6 +10,9 @@
   upkeep, a startup check that the push rules work, and limits on failed logins
   and uploads. Not ready for real memories yet; see `docs/cloud-server.md`.
 - New `memgraph cloud admin backup` and `restore` for the server's data.
+- `cloud local <id>` also works on a deleted memory: its ledger history stays on
+  the machine while the deletion syncs.
+- The server uses `core.fsync` with git 2.36 or later.
 - Memory files are now written atomically, and writers lock the memory
   directory (`.memgraph.lock`). Restart long-running `memgraph mcp` processes
   after upgrading.

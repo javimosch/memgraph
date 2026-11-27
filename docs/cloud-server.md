@@ -11,8 +11,8 @@ graph explorer.
 
 ## Needs
 
-Linux, `git` and coreutils `timeout`. Tested with git 2.34.1 and 2.39.5. With 2.39 each
-git run that writes warns that `core.fsyncObjectFiles` is deprecated.
+Linux, `git` and coreutils `timeout`. Tested with git 2.34.1 and 2.39.5. The server sets
+git's flush settings by version.
 
 ## Set up
 
@@ -180,8 +180,9 @@ in Docker, on a network with no outside access. It mounts nothing from the host.
 
 ## Not done yet
 
-- **Power loss:** git 2.34 has no `core.fsync` setting, so an acknowledged push might be
-  lost. Untested.
+- **Power loss is untested.** With git 2.36 or later the server sets `core.fsync=all`,
+  which covers refs. Older git only offers `core.fsyncObjectFiles`, so there an
+  acknowledged push is more likely to be lost. Use 2.36 or later if you can.
 - Backups are not encrypted, and nothing schedules them.
 - The systemd unit is untested. A Caddy proxy was tested in containers only. Neither
   has run longer than a test.

@@ -163,13 +163,25 @@ func MergeLedger(a, b []byte) []byte {
 	return out.Bytes()
 }
 
-// PublicLedger drops lines that carry a local-only memory. A line that does
-// not parse cannot be shown to be safe, so it is dropped too.
+// ActionWithhold marks the ledger history of a deleted memory as private. It
+// does not make the memory itself local-only, so its deletion still syncs.
+const ActionWithhold = "withhold"
+
+// PublicLedger drops lines that carry a local-only memory, and every line,
+// marker included, of a memory whose history is withheld. A line that does not
+// parse cannot be shown to be safe, so it is dropped too.
 func PublicLedger(data []byte, localIDs map[string]bool) []byte {
+	lines := ledgerLines(data)
+	withheld := map[string]bool{}
+	for _, line := range lines {
+		if e, ok := parseLine(line); ok && e.Action == ActionWithhold {
+			withheld[e.MemoryID] = true
+		}
+	}
 	var out bytes.Buffer
-	for _, line := range ledgerLines(data) {
+	for _, line := range lines {
 		e, ok := parseLine(line)
-		if !ok || localIDs[e.MemoryID] || (e.Snapshot != nil && e.Snapshot.Local) {
+		if !ok || localIDs[e.MemoryID] || withheld[e.MemoryID] || (e.Snapshot != nil && e.Snapshot.Local) {
 			continue
 		}
 		out.WriteString(line + "\n")

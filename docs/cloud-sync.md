@@ -75,6 +75,11 @@ This writes `local: true` into the memory; it works before `enable` too. The mem
 the ledger lines that carry its content are never uploaded, and a replacement made with
 `supersede --text` stays local. `cloud unlocal` reverses it.
 
+- **For a deleted memory**, the same command keeps its ledger history on this machine
+  by adding a `withhold` line to the ledger. The deletion still syncs. It works before
+  `enable` and survives `cloud disable`. It cannot be undone with `unlocal`, and it
+  removes nothing already uploaded. If the deletion is on the server only through the
+  missing file, an old copy on another machine's first link is not recognised as deleted.
 - Flagging an **already synced** memory removes nothing from the server or its history.
   The file is then neither uploaded nor updated.
 - Older memgraph versions drop the flag when they rewrite a file. A linked machine keeps
@@ -87,9 +92,11 @@ the ledger lines that carry its content are never uploaded, and a replacement ma
 A blocked sync exits 94 and changes no memory, locally or on the server.
 
 - **Secrets:** new or changed lines are matched against common key and token formats.
-  This misses many secrets. Remove the text, keep the memory local, or accept a finding
-  with `cloud allow <fingerprint>` (`--allow-finding` with `enable` and `clone`).
-  Git history keeps anything already pushed.
+  This misses many secrets. A finding names the memory. Remove the text, run
+  `cloud local <id>`, or accept the finding with `cloud allow <fingerprint>`
+  (`--allow-finding` with `enable` and `clone`). **Deleting alone is not enough:**
+  `delete` and `supersede` copy the text into the ledger, so also run `cloud local <id>`.
+  Git history keeps anything already pushed. Replace any real secret.
 - **Mass deletion:** more than 10 memories, or 10% if that is larger, needs
   `--allow-mass-delete`. A memory directory that lost all its memories always stops.
 - **Rewritten server history**, for example a restored backup, stops the sync. Run

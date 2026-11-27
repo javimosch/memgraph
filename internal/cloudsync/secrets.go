@@ -9,7 +9,9 @@ import (
 
 // Finding locates a likely secret without ever carrying it.
 type Finding struct {
-	File        string `json:"file"`
+	File string `json:"file"`
+	// MemoryID is the memory concerned, also for a line of the ledger.
+	MemoryID    string `json:"memory_id,omitempty"`
 	Line        int    `json:"line"`
 	Rule        string `json:"rule"`
 	Fingerprint string `json:"fingerprint"`
@@ -49,7 +51,13 @@ func Scan(file string, old, data []byte, allowed map[string]bool) []Finding {
 				sum := sha256.Sum256([]byte(rule.name + "\x00" + m))
 				fp := hex.EncodeToString(sum[:8])
 				if !allowed[fp] {
-					out = append(out, Finding{File: file, Line: i + 1, Rule: rule.name, Fingerprint: fp})
+					f := Finding{File: file, Line: i + 1, Rule: rule.name, Fingerprint: fp}
+					if IsMemoryFile(file) {
+						f.MemoryID = MemoryID(file)
+					} else if e, ok := parseLine(line); file == LedgerName && ok {
+						f.MemoryID = e.MemoryID
+					}
+					out = append(out, f)
 				}
 			}
 		}
