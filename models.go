@@ -89,6 +89,7 @@ type GraphIndex struct {
 
 type SearchIndex struct {
 	Version       int                         // index format version
+	Source        string                      // memorySource of the files indexed; keep second, see indexSource
 	TermFreq      map[string]map[string]int   // term -> (memoryID -> frequency)
 	TermPositions map[string]map[string][]int // term -> (memoryID -> sorted token positions)
 	DocFreq       map[string]int              // term -> document frequency

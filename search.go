@@ -1,7 +1,10 @@
 package main
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"math"
 	"os"
 	"path/filepath"
@@ -9,6 +12,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/javimosch/memgraph/internal/fsx"
 )
 
 var stopWords = map[string]bool{
@@ -61,26 +66,22 @@ func buildSearchIndex(memoryPath string) (*SearchIndex, error) {
 		Memories:      make(map[string]Memory),
 	}
 
-	files, err := os.ReadDir(memoryPath)
+	// Recorded before any file is read: a file that changes while the index
+	// is being built no longer matches it, so the next load rebuilds.
+	names, source, err := memorySource(memoryPath)
 	if err != nil {
 		return nil, err
 	}
+	index.Source = source
 
-	for _, file := range files {
-		if file.IsDir() || strings.HasPrefix(file.Name(), ".") {
-			continue
-		}
-		if !strings.HasPrefix(file.Name(), "memory_") || !strings.HasSuffix(file.Name(), ".md") {
-			continue
-		}
-
-		filePath := filepath.Join(memoryPath, file.Name())
+	for _, name := range names {
+		filePath := filepath.Join(memoryPath, name)
 		content, err := os.ReadFile(filePath)
 		if err != nil {
 			continue
 		}
 
-		memory := parseMemory(string(content), file.Name())
+		memory := parseMemory(string(content), name)
 		if memory.ID == "" {
 			continue
 		}
@@ -109,6 +110,52 @@ func buildSearchIndex(memoryPath string) (*SearchIndex, error) {
 
 	index.DocCount = len(index.Memories)
 	return index, nil
+}
+
+// memorySource lists the memory files of a directory and sums up their names,
+// sizes and modification times, which tells whether an index still matches them.
+func memorySource(memoryPath string) (names []string, source string, err error) {
+	files, err := os.ReadDir(memoryPath)
+	if err != nil {
+		return nil, "", err
+	}
+	sum := sha256.New()
+	for _, file := range files {
+		name := file.Name()
+		if file.IsDir() || !strings.HasPrefix(name, "memory_") || !strings.HasSuffix(name, ".md") {
+			continue
+		}
+		// Stat follows a symlink, as reading the file does.
+		info, err := os.Stat(filepath.Join(memoryPath, name))
+		if err != nil {
+			continue
+		}
+		names = append(names, name)
+		fmt.Fprintf(sum, "%s\x00%d\x00%d\n", name, info.Size(), info.ModTime().UnixNano())
+	}
+	return names, hex.EncodeToString(sum.Sum(nil)), nil
+}
+
+// indexSource reads the Source of a saved index from its first fields, without
+// loading the rest. It returns "" for a missing, damaged or older index.
+func indexSource(path string) string {
+	f, err := os.Open(path)
+	if err != nil {
+		return ""
+	}
+	defer f.Close()
+	dec := json.NewDecoder(f)
+	var head [5]json.Token // { "Version" 1 "Source" "..."
+	for i := range head {
+		if head[i], err = dec.Token(); err != nil {
+			return ""
+		}
+	}
+	if head[3] != "Source" {
+		return ""
+	}
+	source, _ := head[4].(string)
+	return source
 }
 
 func calculateTFIDF(index *SearchIndex, term string, memoryID string) float64 {
@@ -471,10 +518,14 @@ func searchMemories(index *SearchIndex, query string, opts SearchOptions) []Sear
 
 func loadSearchIndex(memoryPath string) (*SearchIndex, error) {
 	indexFile := filepath.Join(memoryPath, "search_index.json")
-	if data, err := os.ReadFile(indexFile); err == nil {
-		var index SearchIndex
-		if err := json.Unmarshal(data, &index); err == nil && index.Version == 1 {
-			return &index, nil
+	// A saved index is used only while it matches the files. They can change
+	// without a rebuild: one that was killed, rsync, git or a hand edit.
+	if _, source, err := memorySource(memoryPath); err == nil && indexSource(indexFile) == source {
+		if data, err := os.ReadFile(indexFile); err == nil {
+			var index SearchIndex
+			if err := json.Unmarshal(data, &index); err == nil && index.Version == 1 {
+				return &index, nil
+			}
 		}
 	}
 
@@ -491,5 +542,5 @@ func saveSearchIndex(memoryPath string, index *SearchIndex) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(indexFile, data, 0644)
+	return fsx.WriteFileAtomic(indexFile, data, 0644)
 }

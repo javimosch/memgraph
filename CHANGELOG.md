@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Fixed: search could use an out-of-date `search_index.json` and silently miss
+  memories added or changed by `rsync`, git, a hand edit, with `auto_index` off,
+  or when a rebuild was killed. The index now records the files it was built
+  from and is rebuilt when they differ; it is also saved atomically. An index
+  from an older version is rebuilt once.
 - New `memgraph cloud` commands: opt-in, manual sync of a project between
   machines through a git smart-HTTP server, with conflict copies, local-only
   memories, secret scanning and deletion guards. See `docs/cloud-sync.md`.
