@@ -45,7 +45,7 @@ func isCloudServerCommand(args []string) bool {
 			arg == "--server" || arg == "--repack-every" || arg == "--memory-dir" || arg == "--client-ip-header" || arg == "--out" || arg == "--in":
 			i++
 		case !strings.HasPrefix(arg, "-"):
-			return arg == "serve" || arg == "admin" || arg == "hook"
+			return arg == "serve" || arg == "admin" || arg == "hook" || arg == "limit"
 		}
 	}
 	return false
@@ -112,6 +112,11 @@ func checkListen(addr string, allowNonLoopback bool) error {
 }
 
 func handleCloudServer(args []string) {
+	// The server starts this to run git. What follows is git's, not flags of
+	// ours.
+	if len(args) > 0 && args[0] == "limit" {
+		os.Exit(cloudserver.Limit(args[1:]))
+	}
 	// git starts the hook with exactly these arguments; check them first.
 	if len(args) > 0 && args[0] == "hook" {
 		if len(args) != 2 || args[1] != "pre-receive" {
@@ -231,6 +236,7 @@ func serveCloud(a serverArgs) error {
 	}
 	srv, err := cloudserver.New(cloudserver.Options{DataDir: a.data, Limits: cloudserver.DefaultLimits,
 		RepackEvery: a.repackEvery, HookCommand: []string{self, "cloud", "hook", "pre-receive"},
+		LimitCommand:   []string{self, "cloud", "limit"},
 		ClientIPHeader: a.clientIPHeader})
 	if err != nil {
 		return err

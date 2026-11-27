@@ -57,6 +57,8 @@ type Options struct {
 	RepackEvery int
 	// HookCommand runs PreReceive on its standard input, program first.
 	HookCommand []string
+	// LimitCommand runs Limit on the arguments added to it, program first.
+	LimitCommand []string
 	// ClientIPHeader names the header in which a trusted proxy puts the
 	// client's address, such as X-Forwarded-For. Empty trusts no header.
 	ClientIPHeader string
@@ -68,7 +70,8 @@ type Server struct {
 	lim         Limits
 	repackEvery int
 
-	git, timeout string
+	git          string
+	limitCommand []string
 	env          []string
 	receives     chan struct{}
 	uploads      chan struct{}
@@ -93,15 +96,15 @@ func New(opts Options) (_ *Server, err error) {
 	if len(opts.HookCommand) == 0 {
 		return nil, errors.New("a hook command is required: without it any push would be accepted")
 	}
-	s := &Server{data: Data{Dir: dir}, lim: opts.Limits, repackEvery: opts.RepackEvery,
+	if len(opts.LimitCommand) == 0 {
+		return nil, errors.New("a limit command is required: without it a hung git would never end")
+	}
+	s := &Server{limitCommand: opts.LimitCommand, data: Data{Dir: dir}, lim: opts.Limits, repackEvery: opts.RepackEvery,
 		receives: make(chan struct{}, opts.Limits.Receives), uploads: make(chan struct{}, opts.Limits.Uploads),
 		spools: make(chan struct{}, opts.Limits.Spools), ipHeader: opts.ClientIPHeader,
 		logins: newLimiter(opts.Limits.AuthFails, opts.Limits.AuthWindow)}
 	if s.git, err = exec.LookPath("git"); err != nil {
 		return nil, fmt.Errorf("the server needs git: %w", err)
-	}
-	if s.timeout, err = exec.LookPath("timeout"); err != nil {
-		return nil, fmt.Errorf("the server needs coreutils timeout: %w", err)
 	}
 	if err := s.data.init(); err != nil {
 		return nil, err
@@ -161,6 +164,12 @@ func New(opts Options) (_ *Server, err error) {
 		return nil, fmt.Errorf("startup self-check failed: %w", err)
 	}
 	return s, s.resumeMaintenance()
+}
+
+// limited returns the command that runs program under Limit, which bounds the
+// whole process group.
+func (s *Server) limited(seconds int, program ...string) []string {
+	return append(append(slices.Clone(s.limitCommand), strconv.Itoa(seconds)), program...)
 }
 
 // HTTPServer returns an http.Server for s with the connection timeouts set.
@@ -386,10 +395,10 @@ func (s *Server) backend(w http.ResponseWriter, r *http.Request, body *os.File, 
 	if body != nil {
 		r2.Body = io.NopCloser(body)
 	}
-	// coreutils timeout bounds the whole git process group.
+	limited := s.limited(s.lim.Seconds, s.git, "http-backend")
 	h := &cgi.Handler{
-		Path: s.timeout,
-		Args: []string{"--signal=KILL", strconv.Itoa(s.lim.Seconds), s.git, "http-backend"},
+		Path: limited[0],
+		Args: limited[1:],
 		Env: append(slices.Clone(s.env),
 			"GIT_PROJECT_ROOT="+s.data.repos(),
 			"GIT_HTTP_EXPORT_ALL=1", "REMOTE_USER=memgraph"),

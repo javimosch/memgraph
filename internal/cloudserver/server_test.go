@@ -34,10 +34,22 @@ const mainRef = plumbing.ReferenceName("refs/heads/main")
 // hookArg makes the test binary act as the push hook the server installs.
 const hookArg = "memgraph-test-hook"
 
+// limitArg makes the test binary act as the command that bounds git.
+const limitArg = "memgraph-test-limit"
+
+// testLimit is the limit command of the tests. With -race, a Go program waits a
+// second before it exits, and this one runs for every git.
+func testLimit(self string) []string {
+	return []string{"/usr/bin/env", "GORACE=atexit_sleep_ms=0", self, limitArg}
+}
+
 func TestMain(m *testing.M) {
 	if dir := os.Getenv(serveEnv); dir != "" {
 		serveForCrashTest(dir)
 		return
+	}
+	if len(os.Args) > 1 && os.Args[1] == limitArg {
+		os.Exit(Limit(os.Args[2:]))
 	}
 	if len(os.Args) == 2 && os.Args[1] == hookArg {
 		if err := PreReceive(os.Stdin); err != nil {
@@ -83,7 +95,7 @@ func start(t *testing.T, change ...func(*Options)) *srv {
 	check(err)
 	s.token, s.tokenID = secret, tok.ID
 	self := must(os.Executable())
-	s.opts = Options{DataDir: s.data.Dir, Limits: DefaultLimits, HookCommand: []string{self, hookArg}}
+	s.opts = Options{DataDir: s.data.Dir, Limits: DefaultLimits, HookCommand: []string{self, hookArg}, LimitCommand: testLimit(self)}
 	for _, c := range change {
 		c(&s.opts)
 	}

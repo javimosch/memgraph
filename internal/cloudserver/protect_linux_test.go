@@ -17,7 +17,9 @@ import (
 
 	"github.com/go-git/go-git/v5/plumbing"
 
+	"errors"
 	"github.com/javimosch/memgraph/internal/cloudsync"
+	"os/exec"
 )
 
 func script(t *testing.T, body string) string {
@@ -63,7 +65,8 @@ func TestStartupSelfCheck(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			data := Data{Dir: filepath.Join(t.TempDir(), "data")}
-			opts := Options{DataDir: data.Dir, Limits: DefaultLimits, HookCommand: c.hook}
+			opts := Options{DataDir: data.Dir, Limits: DefaultLimits, HookCommand: c.hook,
+				LimitCommand: testLimit(must(os.Executable()))}
 			s, err := New(opts)
 			if err == nil {
 				s.Close()
@@ -447,4 +450,25 @@ func TestManyClientsAtOnce(t *testing.T) {
 		total += a
 	}
 	t.Logf("%d clients needed %d sync runs in total", n, total)
+}
+
+// Limit passes on what the program did when it ends in time.
+func TestLimitPassesOnOutputAndExitCode(t *testing.T) {
+	self := must(os.Executable())
+	cmd := exec.Command(self, limitArg, "20", "sh", "-c", "cat; echo err >&2; exit 7")
+	cmd.Stdin = strings.NewReader("in\n")
+	var stdout, stderr strings.Builder
+	cmd.Stdout, cmd.Stderr = &stdout, &stderr
+	var exit *exec.ExitError
+	if err := cmd.Run(); !errors.As(err, &exit) || exit.ExitCode() != 7 {
+		t.Fatalf("err = %v", err)
+	}
+	if stdout.String() != "in\n" || stderr.String() != "err\n" {
+		t.Errorf("stdout %q, stderr %q", stdout.String(), stderr.String())
+	}
+	for _, bad := range [][]string{{}, {"20"}, {"0", "true"}, {"x", "true"}} {
+		if err := exec.Command(self, append([]string{limitArg}, bad...)...).Run(); err == nil {
+			t.Errorf("%q was accepted", bad)
+		}
+	}
 }

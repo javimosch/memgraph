@@ -11,7 +11,7 @@ graph explorer.
 
 ## Needs
 
-Linux, `git` and coreutils `timeout`. Tested with git 2.34.1, 2.39.5 and
+Linux and `git`. Tested with git 2.34.1, 2.39.5 and
 2.43.0. The server sets
 git's flush settings by version.
 
@@ -119,7 +119,7 @@ delete memories; client guards and git history limit the damage.
 | All objects in a push, unpacked | 128 MB |
 | Objects in a push | 100,000 |
 | Commits in a push / files per tree | 100 / 20,000 |
-| One git process: a request / maintenance | 60 s / 600 s |
+| One git process, with its children: a request / maintenance | 60 s / 600 s |
 | Pushes / fetches handled by git at once | 2 / 4 |
 | Request bodies held on disk at once | 8, so up to 256 MB, plus git's temporary files for 2 pushes |
 | Wait for a free slot before answering 503 | 10 s, at each of the two steps |

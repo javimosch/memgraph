@@ -25,7 +25,7 @@ const serveEnv = "MEMGRAPH_TEST_SERVE_DATA"
 func serveForCrashTest(dir string) {
 	self := must(os.Executable())
 	os.Unsetenv(serveEnv) // the hook runs this binary too
-	s := must(New(Options{DataDir: dir, Limits: DefaultLimits, HookCommand: []string{self, hookArg}}))
+	s := must(New(Options{DataDir: dir, Limits: DefaultLimits, HookCommand: []string{self, hookArg}, LimitCommand: testLimit(self)}))
 	ln := must(net.Listen("tcp", "127.0.0.1:0"))
 	fmt.Println("ADDR", ln.Addr())
 	check(http.Serve(ln, s))

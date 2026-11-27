@@ -90,9 +90,8 @@ func (s *Server) maintainIfDue(name string, p *project) {
 // runs, and a hung git would hold pushes back forever, hence the time limit.
 func (s *Server) maintain(name string) (out []byte, err error) {
 	for _, args := range [][]string{{"repack", "-adq"}, {"prune", "--expire=now"}} {
-		full := append([]string{"--signal=KILL", strconv.Itoa(s.lim.MaintenanceSeconds),
-			s.git, "-C", s.data.repo(name)}, args...)
-		cmd := exec.Command(s.timeout, full...)
+		full := s.limited(s.lim.MaintenanceSeconds, append([]string{s.git, "-C", s.data.repo(name)}, args...)...)
+		cmd := exec.Command(full[0], full[1:]...)
 		cmd.Env = s.env
 		if out, err = cmd.CombinedOutput(); err != nil {
 			break
