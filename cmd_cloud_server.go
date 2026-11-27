@@ -1,6 +1,7 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"flag"
@@ -10,6 +11,7 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -25,6 +27,8 @@ const cloudServerUsage = `memgraph cloud, server side (run on the machine that h
   cloud admin token create --name <machine> --project <p> [--project <p>] --data <dir>
   cloud admin token list --data <dir>
   cloud admin token revoke <id> --data <dir>
+  cloud admin backup --data <dir> [--out <file>]          (default: stdout)
+  cloud admin restore --data <new dir> [--in <file>] [--without-tokens]
 
 --data may also come from MEMGRAPH_CLOUD_DATA. Run admin commands as the same
 user as the server. See docs/cloud-server.md.`
@@ -38,7 +42,7 @@ func isCloudServerCommand(args []string) bool {
 	for i := 0; i < len(args); i++ {
 		switch arg := args[i]; {
 		case arg == "--data" || arg == "--listen" || arg == "--name" || arg == "--project" ||
-			arg == "--server" || arg == "--repack-every" || arg == "--memory-dir" || arg == "--client-ip-header":
+			arg == "--server" || arg == "--repack-every" || arg == "--memory-dir" || arg == "--client-ip-header" || arg == "--out" || arg == "--in":
 			i++
 		case !strings.HasPrefix(arg, "-"):
 			return arg == "serve" || arg == "admin" || arg == "hook"
@@ -58,6 +62,8 @@ type serverArgs struct {
 	projects           repeated
 	repackEvery        int
 	clientIPHeader     string
+	out, in            string
+	withoutTokens      bool
 	allowNonLoopback   bool
 }
 
@@ -71,6 +77,9 @@ func parseServerArgs(args []string) (serverArgs, error) {
 	fs.StringVar(&a.name, "name", "", "")
 	fs.Var(&a.projects, "project", "")
 	fs.IntVar(&a.repackEvery, "repack-every", 500, "")
+	fs.StringVar(&a.out, "out", "", "")
+	fs.StringVar(&a.in, "in", "", "")
+	fs.BoolVar(&a.withoutTokens, "without-tokens", false, "")
 	fs.StringVar(&a.clientIPHeader, "client-ip-header", "", "")
 	fs.BoolVar(&a.allowNonLoopback, "allow-non-loopback", false, "")
 	for _, global := range []string{"json", "j", "y", "no-interactive"} {
@@ -138,6 +147,12 @@ func handleCloudServer(args []string) {
 
 func adminCloud(data cloudserver.Data, a serverArgs) {
 	usage := func() { cloudFail(85, "invalid_argument", errors.New("unknown admin command\n\n"+cloudServerUsage)) }
+	if len(a.words) == 2 && (a.words[1] == "backup" || a.words[1] == "restore") {
+		if err := backupOrRestore(data, a.words[1], a); err != nil {
+			cloudFail(110, a.words[1], err)
+		}
+		return
+	}
 	if len(a.words) < 3 {
 		usage()
 	}
@@ -240,4 +255,77 @@ func serveCloud(a serverArgs) error {
 	wait, cancel := context.WithTimeout(context.Background(), cloudserver.DefaultLimits.Write)
 	defer cancel()
 	return hs.Shutdown(wait)
+}
+
+func isTerminal(f *os.File) bool {
+	info, err := f.Stat()
+	return err == nil && info.Mode()&os.ModeCharDevice != 0
+}
+
+// backupTo writes a backup to a new file, which appears only when complete.
+func backupTo(data cloudserver.Data, path string) (summary *cloudserver.BackupSummary, err error) {
+	if _, err := os.Lstat(path); err == nil {
+		return nil, fmt.Errorf("%s already exists", path)
+	}
+	f, err := os.CreateTemp(filepath.Dir(path), ".backup-*")
+	if err != nil {
+		return nil, err
+	}
+	defer os.Remove(f.Name())
+	summary, err = data.Backup(f)
+	if err == nil {
+		err = f.Sync()
+	}
+	if err = errors.Join(err, f.Close()); err != nil {
+		return nil, err
+	}
+	// Link fails if the name appeared meanwhile, where Rename would replace it.
+	return summary, os.Link(f.Name(), path)
+}
+
+// backupOrRestore reports on stderr: stdout may be the backup itself.
+func backupOrRestore(data cloudserver.Data, what string, a serverArgs) error {
+	report := func(verb string, s *cloudserver.BackupSummary) {
+		fmt.Fprintf(os.Stderr, "%s %d project(s) and %d token(s)\n", verb, len(s.Projects), s.Tokens)
+		for _, p := range s.Projects {
+			fmt.Fprintf(os.Stderr, "  %s %s\n", p.Name, cmp.Or(p.Head, "(empty)"))
+		}
+	}
+	if what == "backup" {
+		if a.out != "" {
+			s, err := backupTo(data, a.out)
+			if err == nil {
+				report("Backed up", s)
+			}
+			return err
+		}
+		if isTerminal(os.Stdout) {
+			return errors.New("a backup is binary: redirect stdout or pass --out <file>")
+		}
+		s, err := data.Backup(os.Stdout)
+		if err == nil {
+			report("Backed up", s)
+		}
+		return err
+	}
+	in := os.Stdin
+	if a.in != "" {
+		f, err := os.Open(a.in)
+		if err != nil {
+			return err
+		}
+		defer f.Close()
+		in = f
+	} else if isTerminal(os.Stdin) {
+		return errors.New("pass --in <file> or pipe a backup to stdin")
+	}
+	s, err := data.Restore(in, !a.withoutTokens)
+	if err != nil {
+		return err
+	}
+	report("Restored", s)
+	if s.Tokens > 0 {
+		fmt.Fprintln(os.Stderr, "Tokens revoked after this backup work again. Check 'cloud admin token list' and revoke them.")
+	}
+	return nil
 }

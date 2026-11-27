@@ -9,6 +9,7 @@
   does storage; memgraph adds per-machine tokens, size limits, push rules and
   upkeep, a startup check that the push rules work, and limits on failed logins
   and uploads. Not ready for real memories yet; see `docs/cloud-server.md`.
+- New `memgraph cloud admin backup` and `restore` for the server's data.
 - Memory files are now written atomically, and writers lock the memory
   directory (`.memgraph.lock`). Restart long-running `memgraph mcp` processes
   after upgrading.

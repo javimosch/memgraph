@@ -11,7 +11,8 @@ graph explorer.
 
 ## Needs
 
-Linux, `git` and coreutils `timeout`. Tested with git 2.34.1 only.
+Linux, `git` and coreutils `timeout`. Tested with git 2.34.1 and 2.39.5. With 2.39 each
+git run that writes warns that `core.fsyncObjectFiles` is deprecated.
 
 ## Set up
 
@@ -138,14 +139,52 @@ retried 10 pushes later. Pushes wait while it runs; fetches continue. In a test
 with 10,000 commits and 3,629 files this took up to about 6 s, and the slowest push
 7.5 s.
 
+## Backup and restore
+
+    memgraph cloud admin backup --data <dir> > backup.tar.gz     # or --out <file>
+    memgraph cloud admin restore --data <new dir> < backup.tar.gz   # or --in <file>
+
+A backup holds a git bundle of every project, the token hashes and a manifest. memgraph
+does not schedule backups, keep old ones or copy them elsewhere: use your backup tool.
+The command writes to stdout, so a tool that collects a command's output can pull it,
+for example over SSH. Run it as the server's user. For a tool with a restore command,
+pipe the archive into `restore` with a **new** data directory.
+
+- It is safe while the server runs, including during pushes and upkeep. Each project
+  is taken at one moment, but not all projects at the same moment.
+- It stages one bundle at a time in the data directory, so it needs free space about
+  the size of the largest project.
+- Unchanged data gives identical bytes (same git version), so tools that skip
+  unchanged backups can. Upkeep may change the bytes without changing the data.
+- The manifest is written last. A cut-off backup does not restore. Still treat a
+  non-zero exit as a failed backup.
+- It is **not encrypted**, and holds every synced memory.
+
+**Restore** only creates a new or empty directory, and creates nothing unless every
+project passes `git fsck` and matches the manifest. Stop the server, restore to a new
+directory, then point the server at it.
+
+- **A backup brings back tokens revoked after it was made.** Check `token list` and
+  revoke them again, or use `--without-tokens` and issue new ones.
+- If the backup is current, machines carry on as before.
+- If it is older than what a machine last synced, that machine's `sync` stops and
+  deletes nothing. On each, run `cloud disable`, then `cloud clone`. That is a first
+  link: newer memories are uploaded again, **and memories deleted after the backup can
+  come back**. `disable` also retires the machine's local-only list, so check `local:
+  true` flags before joining again.
+
+## Testing with containers
+
+`scripts/cloud-e2e/run.sh` runs two machines without git, the server and a TLS proxy
+in Docker, on a network with no outside access. It mounts nothing from the host.
+
 ## Not done yet
 
 - **Power loss:** git 2.34 has no `core.fsync` setting, so an acknowledged push might be
   lost. Untested.
-- No backup tooling. Copy the data directory's `repos/` and `tokens.json` to another
-  machine. After restoring an old copy, clients stop until they join again.
-- The service setup and the proxy have not been tested. Neither has running longer
-  than a test.
+- Backups are not encrypted, and nothing schedules them.
+- The systemd unit is untested. A Caddy proxy was tested in containers only. Neither
+  has run longer than a test.
 - One machine with a valid token can occupy all upload slots for up to a request's
   time limit.
 - Nothing limits how large a project grows on disk.

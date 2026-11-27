@@ -1,0 +1,4 @@
+# A machine that has memgraph and nothing else: no git.
+FROM alpine:latest
+COPY memgraph /usr/local/bin/memgraph
+CMD ["sleep", "infinity"]

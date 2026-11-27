@@ -1,0 +1,7 @@
+FROM debian:bookworm-slim
+RUN apt-get update -qq && apt-get install -y -qq --no-install-recommends git ca-certificates >/dev/null && rm -rf /var/lib/apt/lists/*
+RUN useradd --system --create-home memgraph && install -d -o memgraph -m 0700 /var/lib/mg
+COPY memgraph /usr/local/bin/memgraph
+USER memgraph
+ENV MEMGRAPH_CLOUD_DATA=/var/lib/mg/data
+CMD ["memgraph", "cloud", "serve", "--listen", "127.0.0.1:8787", "--client-ip-header", "X-Forwarded-For"]
