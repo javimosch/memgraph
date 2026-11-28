@@ -335,14 +335,6 @@ func ingestMultiDir(sourceDirs []string, targetDir string, cfg *Config) (*skillG
 		return nil, 0, 0, err
 	}
 
-	// Clear old memory files from previous syncs
-	entries, _ := os.ReadDir(targetDir)
-	for _, e := range entries {
-		if !e.IsDir() && strings.HasPrefix(e.Name(), "memory_") && strings.HasSuffix(e.Name(), ".md") {
-			_ = os.Remove(filepath.Join(targetDir, e.Name()))
-		}
-	}
-
 	var allSkills []skillInput
 	seenIDs := make(map[string]bool)
 	for _, dir := range sourceDirs {
@@ -368,7 +360,31 @@ func ingestMultiDir(sourceDirs []string, targetDir string, cfg *Config) (*skillG
 		allSkills[i].Tags = makeSkillTags(allSkills[i].DirName, allSkills[i].Project)
 	}
 
-	return writeSkillGraph(allSkills, targetDir, cfg)
+	graph, skillCount, namespaceCount, err := writeSkillGraph(allSkills, targetDir, cfg)
+	if err != nil {
+		return nil, 0, 0, err
+	}
+	removeStaleGenerated(targetDir, graph)
+	return graph, skillCount, namespaceCount, nil
+}
+
+// removeStaleGenerated removes the files of earlier builds that this graph no
+// longer has. The folder may also hold saved memories, which stay.
+func removeStaleGenerated(targetDir string, graph *skillGraph) {
+	current := make(map[string]bool, len(graph.Nodes))
+	for _, node := range graph.Nodes {
+		current["memory_"+node.ID+".md"] = true
+	}
+	entries, _ := os.ReadDir(targetDir)
+	for _, e := range entries {
+		name := e.Name()
+		if e.IsDir() || current[name] || !strings.HasPrefix(name, "memory_") || !strings.HasSuffix(name, ".md") {
+			continue
+		}
+		if path := filepath.Join(targetDir, name); isGeneratedFile(path) {
+			_ = os.Remove(path)
+		}
+	}
 }
 
 func writeSkillGraph(skills []skillInput, targetDir string, cfg *Config) (*skillGraph, int, int, error) {
@@ -376,6 +392,14 @@ func writeSkillGraph(skills []skillInput, targetDir string, cfg *Config) (*skill
 		return nil, 0, 0, err
 	}
 	graph := buildSkillGraph(skills)
+
+	// Checked before anything is written.
+	for _, node := range graph.Nodes {
+		path := filepath.Join(targetDir, "memory_"+node.ID+".md")
+		if _, err := os.Lstat(path); err == nil && !isGeneratedFile(path) {
+			return nil, 0, 0, fmt.Errorf("%s was not written by a graph build, so it is left as it is; move it or use another directory", path)
+		}
+	}
 
 	namespaceCount := 0
 	skillCount := 0

@@ -133,14 +133,12 @@ func handleSetup(cfg *Config) {
 
 	// 3. Create .devin/skills/memgraph-usage/SKILL.md
 	devinSkillPath := filepath.Join(cwd, ".devin", "skills", "memgraph-usage", "SKILL.md")
-	if err := os.MkdirAll(filepath.Dir(devinSkillPath), 0755); err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: failed to create .devin/skills dir: %v\n", err)
+	if err := writeBridgeFile(devinSkillPath, devinSkillContent); errors.Is(err, errBridgeExists) {
+		actions = append(actions, "Left the existing .devin/skills/memgraph-usage/SKILL.md unchanged")
+	} else if err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: failed to write Devin skill: %v\n", err)
 	} else {
-		if err := os.WriteFile(devinSkillPath, []byte(devinSkillContent), 0644); err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: failed to write Devin skill: %v\n", err)
-		} else {
-			actions = append(actions, "Created .devin/skills/memgraph-usage/SKILL.md")
-		}
+		actions = append(actions, "Wrote .devin/skills/memgraph-usage/SKILL.md")
 	}
 
 	// 4. Run bridge for detected agent ecosystems. A file that is already
@@ -223,8 +221,12 @@ func upsertFileSection(path, heading, sectionContent string) error {
 	// Replace the section if it is there: from its heading to the next heading
 	// of level 1 or 2. A "#" line inside a code block is not a heading.
 	lines := strings.Split(existing, "\n")
+	quoted := false
 	for start, line := range lines {
-		if strings.TrimSpace(line) != heading {
+		if strings.HasPrefix(strings.TrimSpace(line), "```") {
+			quoted = !quoted
+		}
+		if quoted || strings.TrimSpace(line) != heading {
 			continue
 		}
 		end, fenced := start+1, false

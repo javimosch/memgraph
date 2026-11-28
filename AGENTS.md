@@ -23,6 +23,13 @@ directories it finds. Multiple comma-separated paths are supported.
 
 ## Key Caveats
 
+### User files
+- **A memory folder is shared.** Code that builds graphs or indexes may remove or
+  replace only what `isGeneratedFile` accepts. A blanket delete of `memory_*.md`
+  once destroyed users' memories.
+- **Create, do not overwrite,** files a person may edit (`MEMORY.md`, `AGENTS.md`,
+  agent bridge files). Test with a file that already has content.
+
 ### Frontend
 - **No Cytoscape.js or D3** — those were removed. The sole renderer is Three.js with a 2D orthographic-style camera (z=0 plane, rotation disabled)
 - **`ui/graph.js` is an ES module** (`import * as THREE from 'three'`) — must be served with `type="module"` in the script tag
