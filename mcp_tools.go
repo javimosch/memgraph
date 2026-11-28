@@ -56,8 +56,8 @@ func getMCPTools() []mcpToolDef {
 
 		// --- Admin meta-tool (covers 15 rare operations) ---
 		mcpTool("memgraph_admin",
-			"Access less-common memgraph operations. Commands: verify, ledger, status, config, profile, sessions, init, demo, import, attach, detach, rename, bridge, setup, feedback, query, related, plans, graph_from_dir. Each takes an 'args' object with command-specific parameters (same as the CLI flags).",
-			`{"type":"object","properties":{"command":{"type":"string","enum":["verify","ledger","status","config","profile","sessions","init","demo","import","attach","detach","rename","bridge","setup","feedback","query","related","plans","graph_from_dir"],"description":"Admin command to run"},"args":{"type":"object","description":"Command-specific arguments (same params as the CLI flags for that command)","additionalProperties":true}},"required":["command"]}`),
+			"Access less-common memgraph operations. Commands: verify, ledger, status, config, profile, sessions, init, demo, import, attach, detach, rename, bridge, setup, feedback, query, related, plans, graph_from_dir. Each takes an 'args' object with command-specific parameters. An argument a command does not take is refused, and the error lists the ones it does.",
+			`{"type":"object","properties":{"command":{"type":"string","enum":["verify","ledger","status","config","profile","sessions","init","demo","import","attach","detach","rename","bridge","setup","feedback","query","related","plans","graph_from_dir"],"description":"Admin command to run"},"args":{"type":"object","description":"Command-specific arguments; unknown ones are refused","additionalProperties":true}},"required":["command"]}`),
 	}
 }
 
@@ -75,7 +75,12 @@ func handleMCPToolsCall(cfg *Config, msg *jsonrpcMessage) jsonrpcMessage {
 
 	var args map[string]any
 	if len(params.Arguments) > 0 {
-		_ = json.Unmarshal(params.Arguments, &args)
+		if err := json.Unmarshal(params.Arguments, &args); err != nil {
+			return mcpToolError("Error: arguments must be an object, so nothing was done")
+		}
+	}
+	if err := checkMCPCall(params.Name, args); err != nil {
+		return mcpToolError("Error: " + err.Error())
 	}
 
 	switch params.Name {

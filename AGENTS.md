@@ -24,6 +24,8 @@ directories it finds. Multiple comma-separated paths are supported.
 ## Key Caveats
 
 ### Targets of a write (`guard.go`, `frontmatter.go`)
+- **A new MCP argument must be added to `mcpToolParams` or `mcpAdminParams`**
+  (`mcpargs.go`), or the call is refused.
 - **A new flag on a command that changes something must be added to `writeFlags`**,
   or the command refuses it.
 - **Only `frontmatter()` finds a memory file's header.** Never count `---` lines.
