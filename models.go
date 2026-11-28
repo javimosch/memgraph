@@ -59,7 +59,9 @@ type Memory struct {
 	Created     time.Time `json:"created"`
 	Content     string    `json:"content"`
 	// Local keeps a memory on this machine: cloud sync never uploads it.
-	Local    bool      `json:"local,omitempty"`
+	Local bool `json:"local,omitempty"`
+	// Extra holds the header lines memgraph does not read.
+	Extra    []string  `json:"-"`
 	FilePath string    `json:"file_path,omitempty"`
 	Links    []Link    `json:"links,omitempty"`
 	Sections []Section `json:"sections,omitempty"`

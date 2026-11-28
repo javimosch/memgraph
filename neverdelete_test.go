@@ -138,3 +138,17 @@ func TestUpsertFileSectionIgnoresQuotedHeading(t *testing.T) {
 		t.Errorf("got:\n%s", got)
 	}
 }
+
+// import and demo name memories <timestamp>_<n>. Those are saved memories too,
+// even when the imported record claims a graph build wrote it.
+func TestIngestKeepsImportedMemories(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "memory_1790000000000000001_0.md")
+	writeString(t, path, "---\nname: n\nsession: graph-from-dir\ncreated: 2026-01-01T00:00:00Z\n---\n\nMINE\n")
+	if _, _, _, err := ingestMultiDir([]string{skillDir(t, "alpha")}, dir, nil); err != nil {
+		t.Fatal(err)
+	}
+	if !has(path) {
+		t.Error("removed")
+	}
+}

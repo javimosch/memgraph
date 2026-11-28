@@ -177,6 +177,12 @@ memgraph read <id>/backup
 `recall` prints whole memories by default; the MCP `memgraph_recall` tool returns the
 compact list by default.
 
+**Writing needs an exact target.** IDs are given in full. A command that writes
+stops if `--project` names no known project (the current repository's own name is
+fine), and refuses flags it does not take; put `--` before text that starts with a
+dash. `attach` needs `--force` to move a name, and `detach --purge` deletes only a
+folder that is one project's own.
+
 **Search syntax.** Words must all match; if no memory has them all, partial matches
 are returned. Also: `"an exact phrase"`, `-excluded`, `prefix*`, and the filters
 `tags:`, `type:`, `project:`, `session:`, `id:`. With the same score, the newest ID

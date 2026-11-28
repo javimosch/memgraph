@@ -16,6 +16,7 @@ func mcpProjects(cfg *Config, args map[string]any) string {
 	reg := loadRegistry()
 
 	if mcpGetBool(args, "repair", false) {
+		defer reg.lockForChange()()
 		res := reg.repairRegistry()
 		if len(res.Repaired) > 0 {
 			if err := reg.save(); err != nil {
@@ -205,6 +206,7 @@ func mcpAttach(cfg *Config, args map[string]any) string {
 	fromScope := mcpGetString(args, "from_scope")
 
 	reg := loadRegistry()
+	defer reg.lockForChange()()
 
 	switch mode {
 	case "remove":
@@ -226,6 +228,9 @@ func mcpAttach(cfg *Config, args map[string]any) string {
 		if _, err := os.Stat(scopeDir); os.IsNotExist(err) {
 			return fmt.Sprintf("Scope dir not found: %s", scopeDir)
 		}
+		if refusal := reg.moveRefusal(name, scopeDir); refusal != "" {
+			return "Error: " + refusal + " (a person does this on the command line)"
+		}
 		reg.register(name, scopeDir, fromScope)
 		if err := reg.save(); err != nil {
 			return fmt.Sprintf("Failed to save registry: %v", err)
@@ -243,6 +248,9 @@ func mcpAttach(cfg *Config, args map[string]any) string {
 		// The scope key comes from the memory dir itself — same rule as the
 		// CLI — so both surfaces write identical registry entries (#9).
 		scopeName := scopeForMemoryDir(scopeDir)
+		if refusal := reg.moveRefusal(name, scopeDir); refusal != "" {
+			return "Error: " + refusal + " (a person does this on the command line)"
+		}
 		reg.register(name, scopeDir, scopeName)
 		if err := reg.save(); err != nil {
 			return fmt.Sprintf("Failed to save registry: %v", err)
@@ -258,27 +266,25 @@ func mcpAttach(cfg *Config, args map[string]any) string {
 	}
 }
 
-// mcpDetach implements the detach admin command — unregister a project name.
-// Memory files are kept unless purge is true. There is no interactive
-// confirmation over MCP; the explicit purge flag is the consent.
+
+// mcpDetach implements the detach admin command: it unregisters a project name.
+// Memory files are always kept.
 func mcpDetach(cfg *Config, args map[string]any) string {
 	name := mcpGetString(args, "name")
 	if name == "" {
 		return "Error: name is required"
 	}
 
+	if mcpGetBool(args, "purge", false) {
+		// Deleting a project's memories needs a person.
+		return fmt.Sprintf("Error: memories cannot be deleted this way, so nothing was done. A person can run 'memgraph detach %s --purge'.", name)
+	}
+
 	reg := loadRegistry()
+	defer reg.lockForChange()()
 	entry, ok := reg.Projects[name]
 	if !ok {
 		return fmt.Sprintf("Project %q not found in registry", name)
-	}
-
-	purged := false
-	if mcpGetBool(args, "purge", false) {
-		if err := purgeProjectDir(entry); err != nil {
-			return "Error: " + err.Error()
-		}
-		purged = true
 	}
 
 	reg.unregister(name)
@@ -289,7 +295,7 @@ func mcpDetach(cfg *Config, args map[string]any) string {
 		"status": "detached",
 		"name":   name,
 		"path":   entry.Path,
-		"purged": purged,
+		"purged": false,
 	})
 	return string(out)
 }
@@ -304,6 +310,7 @@ func mcpRename(cfg *Config, args map[string]any) string {
 	}
 
 	reg := loadRegistry()
+	defer reg.lockForChange()()
 	entry, ok := reg.Projects[oldName]
 	if !ok {
 		return fmt.Sprintf("Project %q not found in registry", oldName)
@@ -328,7 +335,10 @@ func mcpRename(cfg *Config, args map[string]any) string {
 // mcpDemo implements the memgraph_demo tool.
 func mcpDemo(cfg *Config, args map[string]any) string {
 	projectName := mcpGetString(args, "project")
-	cfg = resolveMCPConfig(cfg, projectName)
+	cfg, err := resolveWriteConfig(cfg, projectName)
+	if err != nil {
+		return "Error: " + err.Error()
+	}
 
 	samples := []struct{ c, t, p, tags string }{
 		{"Use real database instances in tests instead of mocks.", "feedback", "demo", "testing,database"},

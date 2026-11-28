@@ -23,6 +23,14 @@ directories it finds. Multiple comma-separated paths are supported.
 
 ## Key Caveats
 
+### Targets of a write (`guard.go`, `frontmatter.go`)
+- **A new flag on a command that changes something must be added to `writeFlags`**,
+  or the command refuses it.
+- **Only `frontmatter()` finds a memory file's header.** Never count `---` lines.
+- IDs match exactly. Registry changes go through `lockForChange`; it is not
+  reentrant.
+- Known gaps are recorded in the memgraph project `memgraph` under `[gaps-*]`.
+
 ### User files
 - **A memory folder is shared.** Code that builds graphs or indexes may remove or
   replace only what `isGeneratedFile` accepts. A blanket delete of `memory_*.md`

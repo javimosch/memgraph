@@ -400,12 +400,8 @@ func join(cfg *Config, a cloudArgs, project, dir string, enabling bool) int {
 			cloudFail(110, "state", err)
 		}
 	}
-	reg := loadRegistry()
-	if reg.lookup(project) == "" {
-		reg.register(project, link.MemoryDir, scopeForMemoryDir(link.MemoryDir))
-		if err := reg.save(); err != nil {
-			cloudFail(110, "registry", err)
-		}
+	if err := registerIfNew(project, link.MemoryDir); err != nil {
+		cloudFail(110, "registry", err)
 	}
 	return syncOne(cfg, project, a, enabling)
 }

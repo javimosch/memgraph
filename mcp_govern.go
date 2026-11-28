@@ -17,7 +17,10 @@ func mcpSupersede(cfg *Config, args map[string]any) string {
 	if id == "" {
 		return "Error: id is required"
 	}
-	cfg = resolveMCPConfig(cfg, mcpGetString(args, "project"))
+	cfg, err := resolveWriteConfig(cfg, mcpGetString(args, "project"))
+	if err != nil {
+		return "Error: " + err.Error()
+	}
 
 	defer lockMemoryDir(cfg)()
 	oldFile, ok := findMemoryFileByID(cfg.MemoryDir, id)
@@ -92,6 +95,11 @@ func mcpSupersede(cfg *Config, args map[string]any) string {
 // mcpVerify reports staleness. It never marks unless explicitly asked, and
 // never reaches the network unless explicitly asked.
 func mcpVerify(cfg *Config, args map[string]any) string {
+	if mcpGetBool(args, "mark", false) {
+		if _, err := resolveWriteConfig(cfg, mcpGetString(args, "project")); err != nil {
+			return "Error: " + err.Error()
+		}
+	}
 	cfg = resolveMCPConfig(cfg, mcpGetString(args, "project"))
 
 	all, err := loadMemories(cfg.MemoryDir)

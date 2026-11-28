@@ -359,6 +359,7 @@ func handleProjects(cfg *Config) {
 // exists are skipped and reported: both scopes are live, so picking one
 // is a decision for the operator, not a flag.
 func repairProjects(reg *ProjectRegistry) {
+	defer reg.lockForChange()()
 	res := reg.repairRegistry()
 
 	if len(res.Repaired) > 0 {
@@ -409,6 +410,7 @@ func repairProjects(reg *ProjectRegistry) {
 //	memgraph attach --remove <name>                 # unregister a project name
 func handleAttach(cfg *Config, reg *ProjectRegistry, command string) {
 	args, opts := parseCommandArgs(commandTail(os.Args, command))
+	defer reg.lockForChange()()
 
 	if opts.RemoveAttach && opts.AttachName != "" {
 		// Unregister mode
@@ -477,6 +479,11 @@ func handleAttach(cfg *Config, reg *ProjectRegistry, command string) {
 		fmt.Fprintf(os.Stderr, "memgraph: warning: a scope dir named %q already exists; --project %s will resolve to %s, not that scope\n", name, name, memDir)
 	}
 
+	if refusal := reg.moveRefusal(name, memDir); refusal != "" && !opts.Force {
+		errorResponse(92, "name_conflict", refusal, false)
+		os.Exit(92)
+	}
+
 	reg.register(name, memDir, remoteScope)
 	if err := reg.save(); err != nil {
 		errorResponse(110, "save_error", fmt.Sprintf("Failed to save registry: %v", err), false)
@@ -542,9 +549,15 @@ func handleDetach(reg *ProjectRegistry, command string) {
 		}
 	}
 
+	defer reg.lockForChange()()
+	if now, ok := reg.Projects[name]; !ok || now.Path != entry.Path {
+		errorResponse(92, "resource_error", "the registry changed meanwhile, so nothing was done", false)
+		os.Exit(92)
+	}
+
 	purged := false
 	if opts.Purge {
-		if err := purgeProjectDir(entry); err != nil {
+		if err := reg.purgeProjectDir(name, entry); err != nil {
 			errorResponse(92, "purge_error", err.Error(), false)
 			os.Exit(92)
 		}
@@ -574,14 +587,26 @@ func handleDetach(reg *ProjectRegistry, command string) {
 	}
 }
 
-// purgeProjectDir deletes a registered memory dir, but only when it lives
-// under the projects store — a corrupted registry entry must never turn
-// 'detach --purge' into an arbitrary directory delete.
-func purgeProjectDir(entry ProjectEntry) error {
-	projectsRoot := filepath.Join(getGlobalMemgraphDir(), "projects")
-	rel, err := filepath.Rel(projectsRoot, entry.Path)
-	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) || filepath.IsAbs(rel) {
-		return fmt.Errorf("refusing to purge %s: outside %s", entry.Path, projectsRoot)
+// purgeProjectDir deletes the memory dir of the project name. Only a folder
+// that is one project's own is deleted: <store>/projects/<scope>/memory, not
+// reached through a link, and used by no other name. A registry entry that
+// points anywhere else, such as at all projects, deletes nothing.
+func (reg *ProjectRegistry) purgeProjectDir(name string, entry ProjectEntry) error {
+	root := filepath.Join(getGlobalMemgraphDir(), "projects")
+	rel, err := filepath.Rel(root, filepath.Clean(entry.Path))
+	parts := strings.Split(rel, string(os.PathSeparator))
+	if err != nil || len(parts) != 2 || parts[0] == ".." || parts[0] == "." || parts[1] != "memory" {
+		return fmt.Errorf("refusing to purge %s: only a folder %s%c<scope>%cmemory is one project's own", entry.Path, root, os.PathSeparator, os.PathSeparator)
+	}
+	for _, dir := range []string{filepath.Join(root, parts[0]), filepath.Join(root, parts[0], "memory")} {
+		if info, err := os.Lstat(dir); err == nil && !info.IsDir() {
+			return fmt.Errorf("refusing to purge %s: %s is a link or not a folder", entry.Path, dir)
+		}
+	}
+	for other, e := range reg.Projects {
+		if other != name && sameDir(e.Path, entry.Path) {
+			return fmt.Errorf("refusing to purge %s: project %q uses it too; detach that name first if you mean to delete its memories", entry.Path, other)
+		}
 	}
 	if err := os.RemoveAll(entry.Path); err != nil {
 		return fmt.Errorf("failed to delete %s: %v", entry.Path, err)
@@ -599,6 +624,7 @@ func purgeProjectDir(entry ProjectEntry) error {
 //	memgraph rename <old> <new>
 func handleRename(reg *ProjectRegistry, command string) {
 	args, _ := parseCommandArgs(commandTail(os.Args, command))
+	defer reg.lockForChange()()
 	if len(args) < 2 {
 		if jsonOutput {
 			errorResponse(85, "missing_argument", "Usage: memgraph rename <old> <new>", false)
@@ -765,6 +791,8 @@ func printHelp() {
 	fmt.Println("    --with <id>           supersede: use an existing memory as the replacement")
 	fmt.Println("    --reason <why>        supersede/delete: recorded in the ledger")
 	fmt.Println("    --purge               detach: also delete the memory dir (asks first; skipped with -y/--json)")
+	fmt.Println("    --force               attach: move a name that points at another folder")
+	fmt.Println("    --                    End of options: what follows is text, even if it starts with a dash")
 	fmt.Println("    --repair              projects: rewrite stale remote metadata to the memory dir's real scope")
 	fmt.Println("    --since <when>        ledger: RFC3339, YYYY-MM-DD, or a window like 7d/24h/30m")
 	fmt.Println("    --include-superseded  recall/list/verify: also show replaced memories")

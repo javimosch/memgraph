@@ -260,16 +260,7 @@ func printSectionIndex(results []SearchResult, memoryDir, format string) {
 		if format == "paths" {
 			if data, err := os.ReadFile(path); err == nil {
 				lines := strings.Split(string(data), "\n")
-				dashCount := 0
-				for i, line := range lines {
-					if strings.TrimSpace(line) == "---" {
-						dashCount++
-						if dashCount == 2 {
-							absOffset = i + 1
-							break
-						}
-					}
-				}
+				_, absOffset = frontmatter(lines)
 			}
 		}
 
@@ -397,18 +388,8 @@ func handleRead(cfg *Config) {
 	// Extract section content from the memory file lines.
 	// We need to read the raw file to get accurate line numbers including frontmatter.
 	rawLines := strings.Split(string(data), "\n")
-	// Find where content starts (after the second "---" of frontmatter).
-	contentOffset := 0
-	dashCount := 0
-	for i, line := range rawLines {
-		if strings.TrimSpace(line) == "---" {
-			dashCount++
-			if dashCount == 2 {
-				contentOffset = i + 1
-				break
-			}
-		}
-	}
+	// Where the text starts, after the header.
+	_, contentOffset := frontmatter(rawLines)
 
 	// Section line numbers are relative to the content (after frontmatter).
 	// Convert to absolute file line numbers.

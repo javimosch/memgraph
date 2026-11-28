@@ -19,104 +19,99 @@ func parseMemory(content, filename string) Memory {
 	base := strings.TrimSuffix(filename, ".md")
 	memory.ID = strings.TrimPrefix(base, "memory_")
 
-	inFrontmatter := false
 	inTagsList := false
-	var contentLines []string
-
-	for _, line := range lines {
-		if line == "---" {
-			if !inFrontmatter {
-				inFrontmatter = true
-				continue
-			}
-			inFrontmatter = false
-			continue
-		}
-
-		if inFrontmatter {
-			trimmed := strings.TrimSpace(line)
-			if strings.HasPrefix(line, "name:") {
-				memory.Name = strings.TrimSpace(strings.TrimPrefix(line, "name:"))
-				inTagsList = false
-			} else if strings.HasPrefix(line, "description:") {
-				memory.Description = strings.TrimSpace(strings.TrimPrefix(line, "description:"))
-				inTagsList = false
-			} else if strings.HasPrefix(line, "type:") {
-				memory.Type = strings.TrimSpace(strings.TrimPrefix(line, "type:"))
-				inTagsList = false
-			} else if strings.HasPrefix(line, "project:") {
-				memory.Project = strings.TrimSpace(strings.TrimPrefix(line, "project:"))
-				inTagsList = false
-			} else if strings.HasPrefix(line, "session:") {
-				memory.Session = strings.TrimSpace(strings.TrimPrefix(line, "session:"))
-				inTagsList = false
-			} else if strings.HasPrefix(line, "file_path:") {
-				memory.FilePath = strings.TrimSpace(strings.TrimPrefix(line, "file_path:"))
-				inTagsList = false
-			} else if strings.HasPrefix(line, "tags:") {
-				value := strings.TrimSpace(strings.TrimPrefix(line, "tags:"))
-				if value != "" {
-					memory.Tags = parseTagsValue(value)
-					inTagsList = false
-				} else {
-					memory.Tags = []string{}
-					inTagsList = true
-				}
-			} else if strings.HasPrefix(line, "links:") {
-				value := strings.TrimSpace(strings.TrimPrefix(line, "links:"))
-				if value != "" {
-					memory.Links = parseLinksValue(value)
-				}
-				inTagsList = false
-			} else if inTagsList && strings.HasPrefix(trimmed, "- ") {
-				tag := strings.TrimSpace(strings.TrimPrefix(trimmed, "- "))
-				if tag != "" {
-					memory.Tags = append(memory.Tags, tag)
-				}
-			} else if strings.HasPrefix(line, "local:") {
-				memory.Local = strings.TrimSpace(strings.TrimPrefix(line, "local:")) == "true"
-				inTagsList = false
-			} else if strings.HasPrefix(line, "stale:") {
-				value := strings.TrimSpace(strings.TrimPrefix(line, "stale:"))
-				memory.Stale = value == "true"
-				inTagsList = false
-			} else if strings.HasPrefix(line, "verified:") {
-				value := strings.TrimSpace(strings.TrimPrefix(line, "verified:"))
-				if timestamp, err := time.Parse(time.RFC3339, value); err == nil {
-					memory.Verified = timestamp
-				}
-				inTagsList = false
-			} else if strings.HasPrefix(line, "superseded_by:") {
-				memory.SupersededBy = strings.TrimSpace(strings.TrimPrefix(line, "superseded_by:"))
-				inTagsList = false
-			} else if strings.HasPrefix(line, "superseded_at:") {
-				value := strings.TrimSpace(strings.TrimPrefix(line, "superseded_at:"))
-				if timestamp, err := time.Parse(time.RFC3339, value); err == nil {
-					memory.SupersededAt = timestamp
-				}
-				inTagsList = false
-			} else if strings.HasPrefix(line, "superseded_reason:") {
-				memory.SupersededReason = strings.TrimSpace(strings.TrimPrefix(line, "superseded_reason:"))
-				inTagsList = false
-			} else if strings.HasPrefix(line, "created:") {
-				value := strings.TrimSpace(strings.TrimPrefix(line, "created:"))
-				if timestamp, err := time.Parse(time.RFC3339, value); err == nil {
-					memory.Created = timestamp
-				} else if unixSeconds, err := strconv.ParseInt(value, 10, 64); err == nil {
-					memory.Created = time.Unix(unixSeconds, 0)
-				}
-				inTagsList = false
-			} else if inTagsList && strings.Contains(line, ":") && !strings.HasPrefix(trimmed, "- ") {
-				// A new key ended the YAML list.
-				inTagsList = false
-			}
-			continue
-		}
-
-		contentLines = append(contentLines, line)
+	open, body := frontmatter(lines)
+	var header []string
+	if open >= 0 {
+		header = lines[open+1 : body-1]
 	}
 
-	memory.Content = strings.Join(contentLines, "\n")
+	for _, line := range header {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(line, "name:") {
+			memory.Name = strings.TrimSpace(strings.TrimPrefix(line, "name:"))
+			inTagsList = false
+		} else if strings.HasPrefix(line, "description:") {
+			memory.Description = strings.TrimSpace(strings.TrimPrefix(line, "description:"))
+			inTagsList = false
+		} else if strings.HasPrefix(line, "type:") {
+			memory.Type = strings.TrimSpace(strings.TrimPrefix(line, "type:"))
+			inTagsList = false
+		} else if strings.HasPrefix(line, "project:") {
+			memory.Project = strings.TrimSpace(strings.TrimPrefix(line, "project:"))
+			inTagsList = false
+		} else if strings.HasPrefix(line, "session:") {
+			memory.Session = strings.TrimSpace(strings.TrimPrefix(line, "session:"))
+			inTagsList = false
+		} else if strings.HasPrefix(line, "file_path:") {
+			memory.FilePath = strings.TrimSpace(strings.TrimPrefix(line, "file_path:"))
+			inTagsList = false
+		} else if strings.HasPrefix(line, "tags:") {
+			value := strings.TrimSpace(strings.TrimPrefix(line, "tags:"))
+			if value != "" {
+				memory.Tags = parseTagsValue(value)
+				inTagsList = false
+			} else {
+				memory.Tags = []string{}
+				inTagsList = true
+			}
+		} else if strings.HasPrefix(line, "links:") {
+			value := strings.TrimSpace(strings.TrimPrefix(line, "links:"))
+			if value != "" {
+				memory.Links = parseLinksValue(value)
+			}
+			inTagsList = false
+		} else if inTagsList && strings.HasPrefix(trimmed, "- ") {
+			tag := strings.TrimSpace(strings.TrimPrefix(trimmed, "- "))
+			if tag != "" {
+				memory.Tags = append(memory.Tags, tag)
+			}
+		} else if strings.HasPrefix(line, "local:") {
+			memory.Local = strings.TrimSpace(strings.TrimPrefix(line, "local:")) == "true"
+			inTagsList = false
+		} else if strings.HasPrefix(line, "stale:") {
+			value := strings.TrimSpace(strings.TrimPrefix(line, "stale:"))
+			memory.Stale = value == "true"
+			inTagsList = false
+		} else if strings.HasPrefix(line, "verified:") {
+			value := strings.TrimSpace(strings.TrimPrefix(line, "verified:"))
+			if timestamp, err := time.Parse(time.RFC3339, value); err == nil {
+				memory.Verified = timestamp
+			}
+			inTagsList = false
+		} else if strings.HasPrefix(line, "superseded_by:") {
+			memory.SupersededBy = strings.TrimSpace(strings.TrimPrefix(line, "superseded_by:"))
+			inTagsList = false
+		} else if strings.HasPrefix(line, "superseded_at:") {
+			value := strings.TrimSpace(strings.TrimPrefix(line, "superseded_at:"))
+			if timestamp, err := time.Parse(time.RFC3339, value); err == nil {
+				memory.SupersededAt = timestamp
+			}
+			inTagsList = false
+		} else if strings.HasPrefix(line, "superseded_reason:") {
+			memory.SupersededReason = strings.TrimSpace(strings.TrimPrefix(line, "superseded_reason:"))
+			inTagsList = false
+		} else if strings.HasPrefix(line, "created:") {
+			value := strings.TrimSpace(strings.TrimPrefix(line, "created:"))
+			if timestamp, err := time.Parse(time.RFC3339, value); err == nil {
+				memory.Created = timestamp
+			} else if unixSeconds, err := strconv.ParseInt(value, 10, 64); err == nil {
+				memory.Created = time.Unix(unixSeconds, 0)
+			}
+			inTagsList = false
+		} else {
+			// Not a field of memgraph's, or part of one: kept as written, so
+			// that rewriting the file does not drop it.
+			if inTagsList && strings.Contains(line, ":") && !strings.HasPrefix(trimmed, "- ") {
+				inTagsList = false // a new key ended the YAML list
+			}
+			if trimmed != "" {
+				memory.Extra = append(memory.Extra, strings.TrimRight(line, "\r"))
+			}
+		}
+	}
+
+	memory.Content = strings.Join(lines[body:], "\n")
 	memory.Sections = parseSections(memory.Content)
 	return memory
 }
@@ -292,6 +287,10 @@ func formatMemoryFile(memory Memory) string {
 		extras += fmt.Sprintf("superseded_reason: %s\n", sanitizeYAMLValue(memory.SupersededReason))
 	}
 
+	for _, line := range memory.Extra {
+		extras += line + "\n"
+	}
+
 	return fmt.Sprintf(`---
 name: %s
 description: %s
@@ -314,7 +313,8 @@ func findMemoryFileByID(memoryPath, memoryID string) (string, bool) {
 			continue
 		}
 		fileName := strings.TrimSuffix(file.Name(), ".md")
-		if fileName == memoryID || fileName == "memory_"+memoryID || strings.HasSuffix(fileName, "_"+memoryID) {
+		// The whole ID: a part of one would pick some other memory.
+		if fileName == memoryID || fileName == "memory_"+memoryID {
 			return filepath.Join(memoryPath, file.Name()), true
 		}
 	}
