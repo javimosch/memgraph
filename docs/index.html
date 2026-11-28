@@ -127,7 +127,7 @@ memgraph read 123/backup</code></pre>
 
       <div class="p-6 bg-slate-900 rounded-xl border border-slate-800">
         <h2 class="text-xl font-semibold text-white">HTTP API</h2>
-        <p class="text-slate-400 mt-2 text-sm">The web server also answers JSON requests about the graph. It has no login and listens on all network interfaces: run it only on a network you trust.</p>
+        <p class="text-slate-400 mt-2 text-sm">The web server also answers JSON requests about the graph. It has no login, so it listens only on this machine unless you pass <code class="text-slate-300">--host</code>. Expose it only on a network you trust.</p>
         <pre class="mt-3 bg-slate-950 rounded-lg p-4 text-sm text-slate-300 overflow-x-auto"><code># Search the graph (same scoring as CLI)
 curl "http://localhost:8080/api/search?q=traefik"
 

@@ -13,7 +13,7 @@ go build -o memgraph .
 ```
 Without `--sync-dir` (or `auto_sync_dir` in the config), `serve` uses the standard skill
 directories it finds. Multiple comma-separated paths are supported.
-`serve` listens on `0.0.0.0` with no login.
+`serve` has no login and listens on 127.0.0.1 unless `--host` says otherwise.
 
 ## Architecture
 - **Go backend** embeds `ui/*` via `//go:embed` in `cmd_serve.go`

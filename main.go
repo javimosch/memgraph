@@ -22,6 +22,7 @@ var valueFlags = map[string]bool{
 	"--listen":        true,
 	"--format":        true,
 	"--from-scope":    true,
+	"--host":          true,
 	"--limit":         true,
 	"--memory-dir":    true,
 	"--poll-interval": true,

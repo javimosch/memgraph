@@ -137,10 +137,11 @@ memgraph serve --auto-sync --port 8080
 
 Open `http://localhost:8080` to explore your agent skills constellation!
 
-> **`serve` has no login and listens on all network interfaces** (`0.0.0.0`).
-> Anyone who can reach the port can read the skills and memories it shows, and can
-> ask it to sync again. Run it only on a network you trust, or block the port with
-> a firewall.
+> **`serve` has no login**, so it only listens on this machine (`127.0.0.1`). To
+> reach it from elsewhere, pass `--host`, for example `--host 0.0.0.0` for every
+> network interface. Then anyone who can reach the port can read the skills and
+> memories it shows, and can ask it to sync again. Before 1.12.1 it listened on
+> every interface by default.
 
 ### 2. Standard Memory Usage
 

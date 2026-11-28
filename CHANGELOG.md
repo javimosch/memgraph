@@ -1,7 +1,10 @@
 # Changelog
 
-## Unreleased
+## 1.12.1 — stabilisation: local-only web view, and files left alone
 
+- **Changed:** `serve` now listens only on `127.0.0.1`. It has no login, and used
+  to listen on every network interface. Pass `--host 0.0.0.0` (or an address) if
+  another machine or a container needs to reach it.
 - Fixed: `bridge`, and `setup` in a repository with a `.claude`, `.opencode` or
   `.copilot` folder, replaced `.claude/CLAUDE.md`, `.opencode/memory.json` or
   `.copilot/settings.json` without asking. An existing file with other content is
