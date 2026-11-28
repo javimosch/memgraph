@@ -58,7 +58,7 @@ memgraph also discovers plans from **any** framework — `TODO.md`, `PLAN.md`, `
 ## Features
 
 - **Plain files, no search index**: each memory is a Markdown file. Search reads the files, so edits made by hand, `git` or `rsync` show up at once.
-- **MCP server**: `memgraph mcp` offers 9 tools to save, search, read and manage memories and to recommend skills, plus one `memgraph_admin` tool for less common commands.
+- **MCP server**: `memgraph mcp` offers 9 tools to save, search, read and manage memories and to recommend skills, plus one `memgraph_admin` tool for less common commands. A call with an argument a tool does not take, or a value of the wrong type, is refused.
 - **Galaxy Visualization**: Interactive Via Lactea star map (`memgraph serve`) — spiral arm layout, draggable stars, search, edge toggles.
 - **Agent-First CLI**: `memgraph guide`, `memgraph help-json`, `memgraph query`, `memgraph related`, `memgraph recommend` — learn the tool, discover commands, search the graph, and get skill recommendations with JSON output for agent consumption.
 - **Copy Visible Paths**: Filter skills (e.g. search "rbm20"), hit `ENTER`, then copy all visible file paths to share directly with your agent.

@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.12.4 — MCP refuses what it does not understand
+
+- **Fixed:** MCP tools ignored arguments they did not know, so
+  `memgraph_delete` with `dry_run: true` deleted the memory. A value of the wrong
+  type was ignored too: a `project` given as a number meant the current
+  repository.
+- **Changed:** every MCP tool and `memgraph_admin` command now refuses an unknown
+  argument, a value of the wrong type, and `arguments` or `args` that are not an
+  object. Nothing is done, and the error says what is accepted. `null` counts as
+  absent.
+- **Changed:** `memgraph_admin attach` refuses a mode other than `register`,
+  `remove` or `rebind` (a typo used to register), and `from_scope` without
+  `rebind`.
+
 ## 1.12.3 — text is not metadata, and writes need an exact target
 
 - **Fixed:** a `---` line inside a memory was read as the edge of the file's
