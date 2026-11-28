@@ -1,5 +1,32 @@
 # Changelog
 
+## 1.12.3 — text is not metadata, and writes need an exact target
+
+- **Fixed:** a `---` line inside a memory was read as the edge of the file's
+  header. `recall` and `read` hid the text up to the next one, text there could
+  set the memory's type, project or tags, `supersede` removed it from the file
+  and `delete` left it out of the ledger copy. Files hit by this need no repair
+  unless one of those two commands rewrote or removed them.
+- Fixed: `edit` and `supersede` dropped header fields memgraph does not know.
+- **Changed:** memory IDs must be given in full, on the command line and over
+  MCP. `delete 1` used to pick a memory whose ID ended in `_1`.
+- **Changed:** a command that writes now fails for a `--project` name that
+  resolves to nothing, or that is unregistered and matches several folders. It
+  used to write to the current repository, or to the first match. The current
+  repository's own name still works.
+- **Changed:** commands that change something refuse flags they do not take, and
+  flags missing their value. `delete <id> --dry-run` used to delete. Put `--`
+  before text that starts with a dash.
+- **Changed:** MCP can no longer purge. `detach --purge` deletes only a folder
+  that is one project's own: not the folder of all projects, not one another name
+  uses, and not one outside `~/.memgraph/projects`.
+- **Changed:** `attach` needs `--force` to move a name from a folder that exists.
+- Fixed: a `projects.json` that could not be read was silently overwritten, and
+  simultaneous changes to it lost entries. It is now locked, replaced in one
+  step, and left alone when damaged.
+- Fixed: a skill graph build could still replace a memory made by `import` or
+  `demo` that claimed to be generated.
+
 ## 1.12.2 — serve no longer deletes memories
 
 - **Fixed, data loss:** `memgraph serve`, run in a project, deleted that

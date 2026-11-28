@@ -34,6 +34,7 @@ type CommandOptions struct {
 	RemoveAttach bool
 	AttachName   string
 	Purge        bool
+	Force        bool
 	Repair       bool
 
 	Net               bool
@@ -51,6 +52,11 @@ func parseCommandArgs(args []string) ([]string, CommandOptions) {
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
 		switch {
+		case arg == "--":
+			return append(positional, args[i+1:]...), opts
+		case arg == "--force":
+			opts.Force = true
+			continue
 		case arg == "--json" || arg == "-j" || arg == "--no-interactive" || arg == "-y":
 			continue
 		case arg == "--memory-dir":

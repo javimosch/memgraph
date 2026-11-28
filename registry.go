@@ -1,8 +1,12 @@
 package main
 
 import (
+	"github.com/javimosch/memgraph/internal/fsx"
+
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -15,6 +19,9 @@ import (
 // globally regardless of which repo you're in, and survives repo moves/deletes.
 type ProjectRegistry struct {
 	Projects map[string]ProjectEntry `json:"projects"`
+	// damaged says why the file could not be read. It is then never saved
+	// over, so that what it holds can be repaired.
+	damaged error
 }
 
 // ProjectEntry is one registered project in the registry.
@@ -29,33 +36,110 @@ func registryPath() string {
 	return filepath.Join(getGlobalMemgraphDir(), "projects.json")
 }
 
+// readRegistry reads the registry file. found is false when there is none.
+func readRegistry() (reg *ProjectRegistry, found bool) {
+	reg = &ProjectRegistry{Projects: make(map[string]ProjectEntry)}
+	data, err := os.ReadFile(registryPath())
+	if errors.Is(err, fs.ErrNotExist) {
+		return reg, false
+	}
+	if err == nil {
+		err = json.Unmarshal(data, reg)
+	}
+	if err != nil {
+		reg.damaged = fmt.Errorf("%s cannot be read, so it is left as it is until you repair or move it: %v", registryPath(), err)
+		reg.Projects = nil
+	}
+	if reg.Projects == nil {
+		reg.Projects = make(map[string]ProjectEntry)
+	}
+	return reg, true
+}
+
 // loadRegistry loads the project registry, creating it if missing.
 // Also auto-imports existing scope dirs on first run.
 func loadRegistry() *ProjectRegistry {
-	reg := &ProjectRegistry{Projects: make(map[string]ProjectEntry)}
-
-	data, err := os.ReadFile(registryPath())
-	if err == nil {
-		_ = json.Unmarshal(data, reg)
-		if reg.Projects == nil {
-			reg.Projects = make(map[string]ProjectEntry)
+	reg, found := readRegistry()
+	if !found {
+		defer reg.lockForChange()()
+		if _, err := os.Stat(registryPath()); err != nil {
+			_ = reg.save()
 		}
-		return reg
 	}
-
-	// First run — auto-import existing scope dirs
-	reg.autoImportScopes()
-	reg.save()
 	return reg
 }
 
-// save writes the registry to disk.
+// lockForChange makes this process the only one changing the registry, and
+// reads it again, so that a change made meanwhile is not lost. Call it before
+// looking at what is about to change, and call unlock after save. It must not
+// be taken twice. A first run auto-imports the existing scope dirs.
+func (reg *ProjectRegistry) lockForChange() (unlock func()) {
+	dir := getGlobalMemgraphDir()
+	unlock, err := fsx.Lock(dir)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "memgraph: warning: could not lock %s: %v\n", dir, err)
+		unlock = func() {}
+	}
+	fresh, found := readRegistry()
+	if !found {
+		fresh.autoImportScopes()
+	}
+	*reg = *fresh
+	return unlock
+}
+
+// save writes the registry to disk, replacing the file in one step.
 func (reg *ProjectRegistry) save() error {
+	if reg.damaged != nil {
+		return reg.damaged
+	}
 	data, err := json.MarshalIndent(reg, "", "  ")
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(registryPath(), data, 0644)
+	path := registryPath()
+	if target, err := filepath.EvalSymlinks(path); err == nil {
+		path = target // keep a linked registry linked
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		return err
+	}
+	return fsx.WriteFileAtomic(path, data, 0644)
+}
+
+// sameDir reports whether two paths name one directory.
+func sameDir(a, b string) bool {
+	resolve := func(p string) string {
+		if abs, err := filepath.Abs(p); err == nil {
+			p = abs
+		}
+		if target, err := filepath.EvalSymlinks(p); err == nil {
+			p = target
+		}
+		return filepath.Clean(p)
+	}
+	return resolve(a) == resolve(b)
+}
+
+// moveRefusal says why name must not be pointed at dir: it belongs to another
+// folder that is still there. It returns "" when attaching is safe.
+func (reg *ProjectRegistry) moveRefusal(name, dir string) string {
+	entry, taken := reg.Projects[name]
+	if !taken || sameDir(entry.Path, dir) || !dirExists(entry.Path) {
+		return ""
+	}
+	return fmt.Sprintf("project %q already names %s, so nothing was changed; to move the name run 'memgraph attach %s --force' with the same options", name, entry.Path, name)
+}
+
+// registerIfNew gives dir the name, unless the name is taken.
+func registerIfNew(name, dir string) error {
+	reg := loadRegistry()
+	defer reg.lockForChange()()
+	if reg.lookup(name) != "" {
+		return nil
+	}
+	reg.register(name, dir, scopeForMemoryDir(dir))
+	return reg.save()
 }
 
 // lookup resolves a project name to a memory dir path.
@@ -173,7 +257,7 @@ func (reg *ProjectRegistry) registryWarnings() []string {
 		if entry.Remote != "" && entry.Remote != scopeForMemoryDir(entry.Path) {
 			remoteMem := filepath.Join(projectsDir, entry.Remote, "memory")
 			if dirExists(remoteMem) && filepath.Clean(remoteMem) != filepath.Clean(entry.Path) {
-				warnings = append(warnings, fmt.Sprintf("project %q resolves to %s, but scope %q also exists — repo-local writes land there while --project %s writes to the registered path; pick one with 'memgraph attach %s --from-scope <scope>'", name, entry.Path, entry.Remote, name, name))
+				warnings = append(warnings, fmt.Sprintf("project %q resolves to %s, but scope %q also exists — repo-local writes land there while --project %s writes to the registered path; pick one with 'memgraph attach %s --from-scope <scope> --force'", name, entry.Path, entry.Remote, name, name))
 			}
 		}
 		if shadowed := filepath.Join(projectsDir, name, "memory"); dirExists(shadowed) && filepath.Clean(entry.Path) != shadowed {
@@ -264,23 +348,27 @@ func resolveProjectName(cfg *Config, reg *ProjectRegistry, name string) string {
 		return dir
 	}
 	// 2. Try matching scope dirs by inferred name
+	if dirs := scopeDirsNamed(name); len(dirs) > 0 {
+		return dirs[0]
+	}
+	return ""
+}
+
+// scopeDirsNamed lists the memory dirs of the scopes whose inferred name is name.
+func scopeDirsNamed(name string) (dirs []string) {
 	projectsDir := filepath.Join(getGlobalMemgraphDir(), "projects")
 	entries, err := os.ReadDir(projectsDir)
 	if err != nil {
-		return ""
+		return nil
 	}
 	for _, entry := range entries {
-		if !entry.IsDir() {
-			continue
-		}
-		if inferProjectName(entry.Name()) == name {
-			memDir := filepath.Join(projectsDir, entry.Name(), "memory")
-			if dirExists(memDir) {
-				return memDir
+		if entry.IsDir() && inferProjectName(entry.Name()) == name {
+			if memDir := filepath.Join(projectsDir, entry.Name(), "memory"); dirExists(memDir) {
+				dirs = append(dirs, memDir)
 			}
 		}
 	}
-	return ""
+	return dirs
 }
 
 // fmtError is a helper to avoid importing fmt in callers that only need Sprintf.

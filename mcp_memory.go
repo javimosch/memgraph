@@ -124,17 +124,7 @@ func mcpRead(cfg *Config, args map[string]any) string {
 	}
 
 	rawLines := strings.Split(string(data), "\n")
-	contentOffset := 0
-	dashCount := 0
-	for i, line := range rawLines {
-		if strings.TrimSpace(line) == "---" {
-			dashCount++
-			if dashCount == 2 {
-				contentOffset = i + 1
-				break
-			}
-		}
-	}
+	_, contentOffset := frontmatter(rawLines)
 	absStart := contentOffset + matched.LineStart - 1
 	absEnd := contentOffset + matched.LineEnd
 	if absStart < 0 {
@@ -165,7 +155,10 @@ func mcpSave(cfg *Config, args map[string]any) string {
 	}
 
 	projectName := mcpGetString(args, "project")
-	cfg = resolveMCPConfig(cfg, projectName)
+	cfg, err := resolveWriteConfig(cfg, projectName)
+	if err != nil {
+		return "Error: " + err.Error()
+	}
 
 	memoryType := mcpGetString(args, "type")
 	if memoryType == "" {
@@ -268,7 +261,10 @@ func mcpEdit(cfg *Config, args map[string]any) string {
 	}
 
 	projectName := mcpGetString(args, "project")
-	cfg = resolveMCPConfig(cfg, projectName)
+	cfg, err := resolveWriteConfig(cfg, projectName)
+	if err != nil {
+		return "Error: " + err.Error()
+	}
 
 	defer lockMemoryDir(cfg)()
 	memoryFile, ok := findMemoryFileByID(cfg.MemoryDir, id)
@@ -325,7 +321,10 @@ func mcpDelete(cfg *Config, args map[string]any) string {
 	}
 
 	projectName := mcpGetString(args, "project")
-	cfg = resolveMCPConfig(cfg, projectName)
+	cfg, err := resolveWriteConfig(cfg, projectName)
+	if err != nil {
+		return "Error: " + err.Error()
+	}
 
 	defer lockMemoryDir(cfg)()
 	memoryFile, ok := findMemoryFileByID(cfg.MemoryDir, id)
@@ -406,7 +405,10 @@ func mcpImport(cfg *Config, args map[string]any) string {
 	}
 
 	projectName := mcpGetString(args, "project")
-	cfg = resolveMCPConfig(cfg, projectName)
+	cfg, err := resolveWriteConfig(cfg, projectName)
+	if err != nil {
+		return "Error: " + err.Error()
+	}
 	overrideType := mcpGetString(args, "type")
 
 	records, err := parseImportData([]byte(dataStr))
@@ -486,7 +488,10 @@ func mcpImport(cfg *Config, args map[string]any) string {
 // mcpInit implements the memgraph_init tool.
 func mcpInit(cfg *Config, args map[string]any) string {
 	projectName := mcpGetString(args, "project")
-	cfg = resolveMCPConfig(cfg, projectName)
+	cfg, err := resolveWriteConfig(cfg, projectName)
+	if err != nil {
+		return "Error: " + err.Error()
+	}
 
 	if err := os.MkdirAll(cfg.MemoryDir, 0755); err != nil {
 		return fmt.Sprintf("Failed to create memory directory: %v", err)

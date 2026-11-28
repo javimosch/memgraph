@@ -43,7 +43,7 @@ func TestUnregisterKeepsMemoryFiles(t *testing.T) {
 }
 
 func TestPurgeProjectDirOnlyDeletesInsideTheStore(t *testing.T) {
-	_, home := newTestRegistry(t)
+	reg, home := newTestRegistry(t)
 	inside := filepath.Join(home, ".memgraph", "projects", "scope-b", "memory")
 	outside := filepath.Join(home, "elsewhere", "memory")
 	for _, dir := range []string{inside, outside} {
@@ -53,7 +53,7 @@ func TestPurgeProjectDirOnlyDeletesInsideTheStore(t *testing.T) {
 		writeTestMemory(t, dir, "1", "x")
 	}
 
-	if err := purgeProjectDir(ProjectEntry{Path: inside}); err != nil {
+	if err := reg.purgeProjectDir("gone", ProjectEntry{Path: inside}); err != nil {
 		t.Fatalf("purge inside the store should work: %v", err)
 	}
 	if dirExists(inside) {
@@ -63,7 +63,7 @@ func TestPurgeProjectDirOnlyDeletesInsideTheStore(t *testing.T) {
 		t.Error("empty scope dir should be removed too")
 	}
 
-	if err := purgeProjectDir(ProjectEntry{Path: outside}); err == nil {
+	if err := reg.purgeProjectDir("gone", ProjectEntry{Path: outside}); err == nil {
 		t.Error("purge must refuse paths outside the projects store")
 	}
 	if !dirExists(outside) {

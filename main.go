@@ -126,10 +126,20 @@ func main() {
 	// so it doesn't get treated as a query or memory ID. The command is at
 	// index 1 after normalization, so the tail is everything past it.
 	for _, arg := range os.Args[2:] {
+		if arg == "--" {
+			break
+		}
 		if arg == "--help" || arg == "-h" {
 			printHelp()
 			return
 		}
+	}
+
+	// Before anything is read or written: a command that changes things must
+	// not run when part of what was asked is not understood.
+	if err := checkWriteFlags(command, os.Args[2:]); err != nil {
+		errorResponse(85, "invalid_argument", err.Error(), false)
+		os.Exit(85)
 	}
 
 	if command == "cloud" && isCloudServerCommand(os.Args[2:]) {
@@ -143,6 +153,9 @@ func main() {
 
 	// Load the project registry (auto-imports existing scopes on first run)
 	reg := loadRegistry()
+	if reg.damaged != nil {
+		fmt.Fprintf(os.Stderr, "memgraph: warning: %v\n", reg.damaged)
+	}
 
 	// Registry entries that can misroute --project writes (a live remote
 	// scope competing with the registered path, or an alias shadowing a
@@ -186,6 +199,13 @@ func main() {
 					cfg.MemoryDir = getProjectMemoryPath(gitRoot)
 				} else {
 					cfg.MemoryDir = getDefaultMemoryDir()
+				}
+			}
+			// Reading there is harmless; writing to it is not what was asked.
+			if writesMemories(command, opts) {
+				if err := checkWriteProject(&cfg, reg, opts.Project); err != nil {
+					errorResponse(92, "unknown_project", err.Error(), false)
+					os.Exit(92)
 				}
 			}
 		} else {

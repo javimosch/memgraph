@@ -160,6 +160,17 @@ func resolveMCPConfig(cfg *Config, projectName string) *Config {
 	return cfg
 }
 
+// resolveWriteConfig is resolveMCPConfig for a tool that changes memories. It
+// refuses an unknown project name, which would change the current repository.
+func resolveWriteConfig(cfg *Config, projectName string) (*Config, error) {
+	if projectName != "" {
+		if err := checkWriteProject(cfg, loadRegistry(), projectName); err != nil {
+			return nil, err
+		}
+	}
+	return resolveMCPConfig(cfg, projectName), nil
+}
+
 // mcpGetString extracts a string arg, returning "" if missing.
 func mcpGetString(args map[string]any, key string) string {
 	v, _ := args[key].(string)
