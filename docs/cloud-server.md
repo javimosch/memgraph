@@ -11,9 +11,13 @@ graph explorer.
 
 ## Needs
 
-Linux and `git`. Tested with git 2.34.1, 2.39.5 and
-2.43.0. The server sets
-git's flush settings by version.
+Linux and `git`. Tested with git 2.34.1, 2.39.5, 2.43.0 and 2.53.0. The server sets
+git's flush settings by version. The published binary needs glibc, so it does not run
+on Alpine as it is.
+
+The `timeout` command is not needed: the server bounds each git process, and the
+processes git starts, with its own `memgraph cloud limit`. (The `timeout` of Ubuntu
+26.04 leaves those child processes running.)
 
 ## Set up
 
@@ -43,6 +47,27 @@ It refuses a non-loopback address unless you pass `--allow-non-loopback`; do tha
 if the network path is already private, such as a container network behind the proxy.
 The proxy must allow request bodies of 32 MB and requests lasting 180 s.
 
+With Traefik (tested with 3.7.0, file provider, default timeouts), a route like this
+was enough. Use your own host name and certificate resolver. The DNS record pointed
+straight at Traefik; with another proxy in front, such as a CDN, check the client
+address and the request limits again.
+
+    http:
+      routers:
+        memgraph-cloud:
+          rule: "Host(`memgraph.example.com`)"
+          service: memgraph-cloud
+          entryPoints: [websecure]
+          tls:
+            certResolver: letsencrypt
+      services:
+        memgraph-cloud:
+          loadBalancer:
+            servers:
+              - url: "http://127.0.0.1:8787"
+
+Test large uploads through your proxy: a very slow link was not tried.
+
 ## Failed logins
 
 After 20 failed logins in a minute a client gets 429. Requests without credentials do
@@ -67,16 +92,60 @@ removes lock files and temporary data that a killed git leaves behind; a leftove
 running. A systemd unit does this with its default `KillMode=control-group`. Do not
 change that, and do not run git by hand in served repositories while the server is up.
 
-Example unit, **not yet tested**:
+This unit ran on Ubuntu 24.04 (systemd 255). The limits suit a small shared host;
+adjust them to yours.
+
+    [Unit]
+    Description=memgraph cloud sync server
+    After=network-online.target
+    Wants=network-online.target
 
     [Service]
     User=memgraph
+    Group=memgraph
     Environment=MEMGRAPH_CLOUD_DATA=/var/lib/memgraph-cloud
-    ExecStart=/usr/local/bin/memgraph cloud serve
+    ExecStart=/usr/local/bin/memgraph cloud serve --listen 127.0.0.1:8787 --client-ip-header X-Forwarded-For
+    # The server relies on this: a restart must leave no git running.
     KillMode=control-group
     Restart=on-failure
+    RestartSec=5
     StateDirectory=memgraph-cloud
+    StateDirectoryMode=0700
     UMask=0077
+
+    # memgraph gives way before other services.
+    MemoryMax=384M
+    MemorySwapMax=0
+    CPUQuota=50%
+    Nice=10
+    OOMScoreAdjust=500
+    TasksMax=128
+
+    NoNewPrivileges=true
+    ProtectSystem=strict
+    ProtectHome=true
+    PrivateTmp=true
+    PrivateDevices=true
+    ProtectKernelTunables=true
+    ProtectKernelModules=true
+    ProtectControlGroups=true
+    RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+    RestrictSUIDSGID=true
+    LockPersonality=true
+
+    [Install]
+    WantedBy=multi-user.target
+
+Create the account first:
+
+    useradd --system --home-dir /var/lib/memgraph-cloud --no-create-home \
+      --shell /usr/sbin/nologin memgraph
+
+`--client-ip-header` assumes the proxy below; read "Failed logins" before using it.
+With this unit, run admin commands like this (the shell does not have the service's
+environment):
+
+    sudo -u memgraph memgraph cloud admin token list --data /var/lib/memgraph-cloud
 
 Restart the service after replacing the binary: the push hook runs the binary at the
 path the server started from.
@@ -174,6 +243,24 @@ directory, then point the server at it.
   come back**. `disable` also retires the machine's local-only list, so check `local:
   true` flags before joining again.
 
+## Measured
+
+All with generated memories. These show what one test needed, not guarantees.
+
+- **Containers, 8,832 memories (37 MB)**, server limited to 384 MB without swap and
+  half a CPU, git 2.43.0, Caddy in front: first uploads, clones, repeated and
+  simultaneous syncs, upkeep and two restores had no failures. The server stayed
+  under 90 MB, including file cache. Its data was about 37 MB and a backup about
+  32 MB. With all memories in one project, a client peaked at about 250 MB.
+- **A one-CPU host with 1.7 GB of RAM**, the unit and a Traefik route as above,
+  3,688 memories: sync between two clients, a service restart and the failed-login
+  limit worked. In the first run the server's memory peaked at 14 MB; after a
+  further clone and upload, at about 35 MB. Edit syncs took 2 to 4 s. A backup taken
+  there restored in a container, with all memories and a clean `git fsck`.
+
+The history in these tests was short. How a project grows over months was not
+measured.
+
 ## Testing with containers
 
 `scripts/cloud-e2e/run.sh` runs two machines without git, the server and a TLS proxy
@@ -185,8 +272,12 @@ in Docker, on a network with no outside access. It mounts nothing from the host.
   which covers refs. Older git only offers `core.fsyncObjectFiles`, so there an
   acknowledged push is more likely to be lost. Use 2.36 or later if you can.
 - Backups are not encrypted, and nothing schedules them.
-- The systemd unit is untested. A Caddy proxy was tested in containers only. Neither
-  has run longer than a test.
+- The unit and the Traefik route have only had short trials; nothing here has run for
+  long with real use. A reboot of the host was not tested. Caddy was tested in
+  containers only.
+- Nothing monitors the service. `GET /health` answers 200 while it runs, without a
+  token; it does not say whether pushes are being refused (see "Push rules").
+- A project cannot be deleted with a command.
 - One machine with a valid token can occupy all upload slots for up to a request's
   time limit.
 - Nothing limits how large a project grows on disk.
