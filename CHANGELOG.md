@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.12.2 — serve no longer deletes memories
 
 - **Fixed, data loss:** `memgraph serve`, run in a project, deleted that
   project's memories when it synced skills, which it does by default when it
