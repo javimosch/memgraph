@@ -2,7 +2,7 @@
 
 Share one memgraph project between your own machines through a git server you run.
 
-**Status: unreleased.** The server is `memgraph cloud serve`; see
+**Status: new in 1.12.0.** The server is `memgraph cloud serve`; see
 [cloud-server.md](cloud-server.md), including what it does not do yet. Another git
 smart-HTTP server with a `main` branch also works, but without memgraph's push rules it
 does not protect the repository from a faulty or hostile client.

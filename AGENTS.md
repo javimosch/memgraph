@@ -83,14 +83,18 @@ No default sync directory. The user must pass `--sync-dir`. Multiple comma-separ
 - Engine tests run a real `git http-backend`, so tests need git installed.
 
 ### Cloud server (`internal/cloudserver`, rules in `docs/cloud-server.md`)
-- **`serve`, `admin` and `hook` are dispatched in `main` before config and registry
-  loading.** git runs the hook, and a server has no memories of its own.
+- **`serve`, `admin`, `hook` and `limit` are dispatched in `main` before config and
+  registry loading.** git runs the hook, and a server has no memories of its own.
 - **The pre-scan of packs is a safety requirement**, not an optimisation:
   `receive.maxInputSize` does not limit unpacked size.
 - **Startup recovery assumes no earlier git process is alive.**
 - **git accepts every push when the hook file is missing or not executable.** Keep
   both the startup self-check and the per-push `verifyHook`.
 - Go's `WriteTimeout` also covers reading the request body.
+- **Run git only through `limit`, not coreutils `timeout`:** the uutils one in Ubuntu
+  26.04 leaves git's child processes running.
+- With `-race`, a Go program waits 1 s before exiting. Tests set
+  `GORACE=atexit_sleep_ms=0` for the limit command, which runs for every git.
 - A test that looks for leftover processes must match their exact arguments, or it
   finds the shell that mentions them.
 - In tests the test binary is the push hook and, for the crash test, the server.
