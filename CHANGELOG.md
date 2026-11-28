@@ -1,5 +1,24 @@
 # Changelog
 
+## Unreleased
+
+- Fixed: `bridge`, and `setup` in a repository with a `.claude`, `.opencode` or
+  `.copilot` folder, replaced `.claude/CLAUDE.md`, `.opencode/memory.json` or
+  `.copilot/settings.json` without asking. An existing file with other content is
+  now left unchanged (`bridge` exits 92).
+- Fixed: the MCP `setup` command replaced the whole `AGENTS.md`. It now adds or
+  updates one section, as the command line does.
+- Fixed: updating that section deleted everything after it up to the next `##`
+  heading, including text under a `#` heading. An `AGENTS.md` that cannot be read
+  is no longer replaced.
+- Fixed: shortening text could cut a character such as `é` or `日` in half. `edit`
+  and `supersede` could write that into a memory file, and since 1.12.0 previews
+  could show codes such as `\xc3`. Files already affected are not changed.
+- Fixed: `plans` (command line and MCP) failed after `graph-from-dir
+  --include-plans` had indexed plans into the global graph.
+- Documentation matches the program again. Cloud sync is marked experimental and
+  paused.
+
 ## 1.12.0 — opt-in cloud sync, and search that needs far less memory
 
 - Search reads the memory files directly instead of keeping

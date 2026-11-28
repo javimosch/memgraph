@@ -6,9 +6,12 @@
 
 **Memgraph CLI** — Knowledge graph and memory system for AI coding agents.
 
-Features a phyllotaxis-spiral visual knowledge graph explorer, automatic skills folder synchronization, TF-IDF + semantic graph linking, and agent-agnostic memory persistence.
+It keeps memories as plain Markdown files on your machine, searches them from the
+command line or over MCP, and builds a graph of your agent skills that it can rank
+for a task and show in a web view.
 
-> **Status:** v1.9.0 — stable public API. Automated tests cover graph build, query scoring, ranking order, guide/catalog discovery, serve API JSON-error contracts, end-to-end ingest, and memory writes with `-race` on every push.
+CI builds the program and runs its tests with the race detector on every pull request
+and push to `master`. See [CHANGELOG.md](CHANGELOG.md) for what changed in each version.
 
 ## Integrations
 
@@ -42,7 +45,8 @@ Features a phyllotaxis-spiral visual knowledge graph explorer, automatic skills 
 ```
 
 ```bash
-# Index your skills + planning files
+# Index your skills and the planning files under your project folders
+# (see "Plan File Discovery" for which folders)
 memgraph graph-from-dir --include-plans
 
 # Ask for recommendations — get skills AND past plans
@@ -53,6 +57,8 @@ memgraph also discovers plans from **any** framework — `TODO.md`, `PLAN.md`, `
 
 ## Features
 
+- **Plain files, no search index**: each memory is a Markdown file. Search reads the files, so edits made by hand, `git` or `rsync` show up at once.
+- **MCP server**: `memgraph mcp` offers 9 tools to save, search, read and manage memories and to recommend skills, plus one `memgraph_admin` tool for less common commands.
 - **Galaxy Visualization**: Interactive Via Lactea star map (`memgraph serve`) — spiral arm layout, draggable stars, search, edge toggles.
 - **Agent-First CLI**: `memgraph guide`, `memgraph help-json`, `memgraph query`, `memgraph related`, `memgraph recommend` — learn the tool, discover commands, search the graph, and get skill recommendations with JSON output for agent consumption.
 - **Copy Visible Paths**: Filter skills (e.g. search "rbm20"), hit `ENTER`, then copy all visible file paths to share directly with your agent.
@@ -86,16 +92,35 @@ mental model.
 ### One-line install (Linux x86_64)
 
 ```bash
-curl -L https://github.com/javimosch/memgraph/releases/latest/download/memgraph -o ~/.local/bin/memgraph && chmod +x ~/.local/bin/memgraph
+mkdir -p ~/.local/bin
+curl -fL https://github.com/javimosch/memgraph/releases/latest/download/memgraph -o ~/.local/bin/memgraph && chmod +x ~/.local/bin/memgraph
 ```
 
+The published binary needs glibc, so it does not run on Alpine as it is. Release
+pages also have `memgraph.sha256`.
+
 ### From Source
+
+Needs Go 1.26 or later.
 
 ```bash
 git clone https://github.com/javimosch/memgraph.git
 cd memgraph
 go build -o memgraph .
 cp memgraph ~/.local/bin/
+```
+
+### Upgrading
+
+Keep a copy of the old binary if you may want to go back. Restart any running
+`memgraph mcp`, `serve` or `watch` process afterwards. Since 1.12.0 there is no
+`search_index.json`: it is removed when a memory directory is next read, and the
+`auto_index` setting does nothing.
+
+### MCP
+
+```bash
+claude mcp add memgraph -s user -- ~/.local/bin/memgraph mcp
 ```
 
 ## Quickstart
@@ -112,6 +137,11 @@ memgraph serve --auto-sync --port 8080
 
 Open `http://localhost:8080` to explore your agent skills constellation!
 
+> **`serve` has no login and listens on all network interfaces** (`0.0.0.0`).
+> Anyone who can reach the port can read the skills and memories it shows, and can
+> ask it to sync again. Run it only on a network you trust, or block the port with
+> a firewall.
+
 ### 2. Standard Memory Usage
 
 ```bash
@@ -127,6 +157,30 @@ memgraph recall "database" --json
 # List memories
 memgraph list
 ```
+
+A memory saved without `--project` goes to the current git repository's scope.
+
+**Sections.** A `[slug]` at the start of a line begins a section that can be read on
+its own:
+
+```bash
+memgraph remember "$(printf '[deploy] Use systemd timers\n[backup] rsync to /backup')"
+
+# A compact list of the matching sections, instead of whole memories
+memgraph recall "backup" --format index
+
+# Then read one section
+memgraph read <id>/backup
+```
+
+`recall` prints whole memories by default; the MCP `memgraph_recall` tool returns the
+compact list by default.
+
+**Search syntax.** Words must all match; if no memory has them all, partial matches
+are returned. Also: `"an exact phrase"`, `-excluded`, `prefix*`, and the filters
+`tags:`, `type:`, `project:`, `session:`, `id:`. With the same score, the newest ID
+comes first. Every search reads every memory file in the project, so use `--limit`
+on large projects; it also keeps memory use low.
 
 ### 2b. Keeping Memories Honest
 
@@ -172,7 +226,13 @@ memory is still readable in `memgraph ledger --json`.
 
 ### 3. Agent Bridges
 
-Generate bridge configs for your AI agents:
+Generate instruction files for your AI agents (`.claude/CLAUDE.md`,
+`.opencode/memory.json`, `.copilot/settings.json`). A file that already exists with
+other content is **left unchanged**, and the command exits with 92.
+
+`memgraph setup` indexes your skill directories, adds or updates one section of
+`AGENTS.md`, writes `.devin/skills/memgraph-usage/SKILL.md` (replacing that file), and
+creates the bridge files that are missing for the agent folders it finds.
 
 ```bash
 memgraph bridge claude-code
@@ -183,6 +243,10 @@ memgraph bridge copilot
 ### 4. Plan File Discovery
 
 memgraph indexes task plans, TODOs, and roadmaps from any planning framework — not just [planning-with-files](https://github.com/OthmanAdi/planning-with-files). Three discovery layers:
+
+**Where it looks.** Without a directory argument, plans are searched under `~/ai`,
+`~/projets`, `~/projects`, `~/repos` and `~/pr`, not just the current folder. With
+`memgraph graph-from-dir <dir> --include-plans`, `<dir>` is searched too.
 
 **Built-in patterns** (no config needed):
 
@@ -238,10 +302,11 @@ memgraph watch --sync-dir ~/my-skills --poll-interval 2
 memgraph watch --json
 ```
 
-## Cloud sync (new in 1.12.0)
+## Cloud sync (experimental, paused)
 
-Opt-in, manual sync of one project between your own machines. The server is not yet
-ready for real memories. See
+Opt-in, manual sync of one project between your own machines. It shipped in 1.12.0,
+is **not under active development**, and the server is **not ready for real
+memories**. Sync contacts a server only when you run a `cloud` command. See
 [docs/cloud-sync.md](docs/cloud-sync.md) for the client and
 [docs/cloud-server.md](docs/cloud-server.md) for hosting it.
 

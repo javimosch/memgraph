@@ -11,7 +11,9 @@
 go build -o memgraph .
 ./memgraph serve --sync-dir <path>[,<path2>] --port 8080
 ```
-No default sync directory. The user must pass `--sync-dir`. Multiple comma-separated paths supported.
+Without `--sync-dir` (or `auto_sync_dir` in the config), `serve` uses the standard skill
+directories it finds. Multiple comma-separated paths are supported.
+`serve` listens on `0.0.0.0` with no login.
 
 ## Architecture
 - **Go backend** embeds `ui/*` via `//go:embed` in `cmd_serve.go`
