@@ -23,12 +23,14 @@ type SearchWeights struct {
 }
 
 type GlobalConfig struct {
-	DefaultMemoryType string        `json:"default_memory_type"`
-	MaxMemorySize     int           `json:"max_memory_size"`
-	AutoIndex         bool          `json:"auto_index"`
-	AutoSyncDir       string        `json:"auto_sync_dir,omitempty"`
-	AutoSync          bool          `json:"auto_sync,omitempty"`
-	SearchWeights     SearchWeights `json:"search_weights"`
+	DefaultMemoryType string `json:"default_memory_type"`
+	MaxMemorySize     int    `json:"max_memory_size"`
+	// AutoIndex does nothing since search stopped keeping an index. It stays
+	// so that existing config files keep their meaning when rewritten.
+	AutoIndex     bool          `json:"auto_index"`
+	AutoSyncDir   string        `json:"auto_sync_dir,omitempty"`
+	AutoSync      bool          `json:"auto_sync,omitempty"`
+	SearchWeights SearchWeights `json:"search_weights"`
 }
 
 type Link struct {
@@ -56,9 +58,11 @@ type Memory struct {
 	Tags        []string  `json:"tags"`
 	Created     time.Time `json:"created"`
 	Content     string    `json:"content"`
-	FilePath    string    `json:"file_path,omitempty"`
-	Links       []Link    `json:"links,omitempty"`
-	Sections    []Section `json:"sections,omitempty"`
+	// Local keeps a memory on this machine: cloud sync never uploads it.
+	Local    bool      `json:"local,omitempty"`
+	FilePath string    `json:"file_path,omitempty"`
+	Links    []Link    `json:"links,omitempty"`
+	Sections []Section `json:"sections,omitempty"`
 
 	// Verification state, written only by `verify --mark`.
 	Stale    bool      `json:"stale,omitempty"`
@@ -85,13 +89,14 @@ type GraphIndex struct {
 	Edges   []GraphEdge `json:"edges"`
 }
 
-type SearchIndex struct {
-	Version       int                         // index format version
-	TermFreq      map[string]map[string]int   // term -> (memoryID -> frequency)
-	TermPositions map[string]map[string][]int // term -> (memoryID -> sorted token positions)
-	DocFreq       map[string]int              // term -> document frequency
-	DocCount      int                         // total number of documents
-	Memories      map[string]Memory           // memoryID -> Memory metadata
+// searchDoc is what scoring needs: one memory's query terms, and how common
+// they are among all the memories searched.
+type searchDoc struct {
+	TermFreq      map[string]int   // term -> frequency in Memory
+	TermPositions map[string][]int // term -> sorted token positions in Memory
+	DocFreq       map[string]int   // term -> memories that hold it
+	DocCount      int              // memories searched
+	Memory        Memory           // the one being scored
 }
 
 type SearchResult struct {
@@ -117,12 +122,19 @@ type SearchOptions struct {
 	Tags    []string
 	TagOnly bool
 	Weights SearchWeights
+
+	// Limit keeps only the best results, 0 all of them. Search then holds
+	// little more than that many memories, whatever the number of matches.
+	Limit int
+	// HideSuperseded leaves superseded memories out before Limit applies.
+	// One that matches the whole query still hides partial matches.
+	HideSuperseded bool
 }
 
 // Claim is one externally checkable assertion extracted from a memory's text:
 // a filesystem path, a URL, or a code repository.
 type Claim struct {
-	Kind    string `json:"kind"`    // path | url | repo
+	Kind    string `json:"kind"` // path | url | repo
 	Value   string `json:"value"`
 	Verdict string `json:"verdict"` // fresh | stale | unknown
 	Detail  string `json:"detail,omitempty"`
@@ -160,6 +172,7 @@ type LedgerSnapshot struct {
 	Tags        []string `json:"tags,omitempty"`
 	Created     string   `json:"created,omitempty"`
 	Content     string   `json:"content,omitempty"`
+	Local       bool     `json:"local,omitempty"`
 }
 
 type ErrorResponse struct {

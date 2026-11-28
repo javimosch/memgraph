@@ -90,7 +90,7 @@ func mcpProfile(cfg *Config, args map[string]any) string {
 	cfg = resolveMCPConfig(cfg, projectName)
 	sessionFilter := mcpGetString(args, "session")
 
-	index, err := loadSearchIndex(cfg.MemoryDir)
+	memories, err := loadMemories(cfg.MemoryDir)
 	if err != nil {
 		return "Memory directory not found. Run memgraph_init first."
 	}
@@ -108,7 +108,7 @@ func mcpProfile(cfg *Config, args map[string]any) string {
 		projectFilter = projectName
 	}
 
-	for _, memory := range index.Memories {
+	for _, memory := range memories {
 		if projectFilter != "" && memory.Project != projectFilter {
 			continue
 		}
@@ -337,6 +337,7 @@ func mcpDemo(cfg *Config, args map[string]any) string {
 		{"Import supports JSON arrays and JSONL objects.", "reference", "demo", "import,json"},
 	}
 
+	defer lockMemoryDir(cfg)()
 	_ = os.MkdirAll(cfg.MemoryDir, 0755)
 	baseTime := time.Now().UnixNano()
 	for i, sample := range samples {
@@ -347,9 +348,8 @@ func mcpDemo(cfg *Config, args map[string]any) string {
 			Created: time.Now().UTC().Add(time.Duration(-i) * time.Second), Content: sample.c,
 		}
 		outPath := filepath.Join(cfg.MemoryDir, fmt.Sprintf("memory_%s.md", memoryID))
-		_ = os.WriteFile(outPath, []byte(formatMemoryFile(memory)), 0644)
+		_ = writeMemoryBytes(outPath, []byte(formatMemoryFile(memory)))
 	}
-	updateSearchIndex(cfg)
 
 	out, _ := json.Marshal(map[string]any{
 		"created": len(samples),

@@ -331,6 +331,10 @@ func ingestMultiDir(sourceDirs []string, targetDir string, cfg *Config) (*skillG
 		return nil, 0, 0, fmt.Errorf("failed to initialize memory directory: %w", err)
 	}
 
+	if err := refuseIfLinked(targetDir); err != nil {
+		return nil, 0, 0, err
+	}
+
 	// Clear old memory files from previous syncs
 	entries, _ := os.ReadDir(targetDir)
 	for _, e := range entries {
@@ -368,6 +372,9 @@ func ingestMultiDir(sourceDirs []string, targetDir string, cfg *Config) (*skillG
 }
 
 func writeSkillGraph(skills []skillInput, targetDir string, cfg *Config) (*skillGraph, int, int, error) {
+	if err := refuseIfLinked(targetDir); err != nil {
+		return nil, 0, 0, err
+	}
 	graph := buildSkillGraph(skills)
 
 	namespaceCount := 0
@@ -388,9 +395,6 @@ func writeSkillGraph(skills []skillInput, targetDir string, cfg *Config) (*skill
 		return nil, 0, 0, fmt.Errorf("failed to write graph index: %w", err)
 	}
 
-	if cfg != nil {
-		updateSearchIndex(cfg)
-	}
 
 	return graph, skillCount, namespaceCount, nil
 }

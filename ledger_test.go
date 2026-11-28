@@ -131,19 +131,3 @@ func TestParseSinceAcceptsWindowsAndDates(t *testing.T) {
 		t.Error("prose should be rejected, not silently treated as the epoch")
 	}
 }
-
-func TestFilterSupersededHidesReplacedBeliefs(t *testing.T) {
-	results := []SearchResult{
-		{MemoryID: "a"},
-		{MemoryID: "b", SupersededBy: "c"},
-		{MemoryID: "c"},
-	}
-	kept := filterSuperseded(append([]SearchResult(nil), results...), false)
-	if len(kept) != 2 || kept[0].MemoryID != "a" || kept[1].MemoryID != "c" {
-		t.Fatalf("want a and c, got %+v", kept)
-	}
-	all := filterSuperseded(append([]SearchResult(nil), results...), true)
-	if len(all) != 3 {
-		t.Fatalf("--include-superseded should keep everything, got %+v", all)
-	}
-}

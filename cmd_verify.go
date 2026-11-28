@@ -17,7 +17,7 @@ const exitStaleFound = 90
 func handleVerify(cfg *Config) {
 	_, opts := parseCommandArgs(os.Args[2:])
 
-	index, err := loadSearchIndex(cfg.MemoryDir)
+	all, err := loadMemories(cfg.MemoryDir)
 	if err != nil {
 		if jsonOutput {
 			errorResponse(92, "resource_not_found", "Memory directory not found", false)
@@ -33,7 +33,7 @@ func handleVerify(cfg *Config) {
 	}
 
 	var memories []Memory
-	for _, memory := range index.Memories {
+	for _, memory := range all {
 		if projectFilter != "" && memory.Project != projectFilter {
 			continue
 		}
@@ -80,10 +80,6 @@ func handleVerify(cfg *Config) {
 			}
 		}
 		results = append(results, result)
-	}
-
-	if marked > 0 {
-		updateSearchIndex(cfg)
 	}
 
 	// Stale first, then unknown: the reader's attention goes where the
@@ -144,6 +140,7 @@ func printVerifyHuman(results []VerifyResult, counts map[string]int, marked int,
 // markMemory writes (or clears) the stale flag and stamps the check time. It
 // rewrites nothing else, and returns false when the file already said this.
 func markMemory(cfg *Config, memoryID string, stale bool) bool {
+	defer lockMemoryDir(cfg)()
 	memoryFile, ok := findMemoryFileByID(cfg.MemoryDir, memoryID)
 	if !ok {
 		return false
@@ -158,7 +155,7 @@ func markMemory(cfg *Config, memoryID string, stale bool) bool {
 	}
 	memory.Stale = stale
 	memory.Verified = time.Now().UTC()
-	if err := os.WriteFile(memoryFile, []byte(formatMemoryFile(memory)), 0644); err != nil {
+	if err := writeMemoryBytes(memoryFile, []byte(formatMemoryFile(memory))); err != nil {
 		return false
 	}
 	return true

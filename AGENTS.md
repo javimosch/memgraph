@@ -71,6 +71,32 @@ No default sync directory. The user must pass `--sync-dir`. Multiple comma-separ
 - `shared-keyword` and `similar` edges are hidden by default in the UI
 - Namespace nodes represent project clusters; skill nodes are members
 
+### Cloud sync (`internal/cloudsync`, rules in `docs/cloud-sync.md`)
+- **Every writer of memory files takes `lockMemoryDir` once, before its first read,
+  and writes with `writeMemoryBytes`.** The lock is not reentrant.
+- **`formatMemoryFile` drops unknown frontmatter keys.** A new field needs the model,
+  parser and writer. `local` also goes into `LedgerSnapshot`, or deleted local-only
+  memories would be uploaded with the ledger.
+- **Never use go-git with a file path remote.** Its in-process server accepts stale
+  pushes; `CheckURL` allows HTTP(S) only.
+- **Cloud commands are not exposed over MCP**, so agents do not upload on their own.
+- Engine tests run a real `git http-backend`, so tests need git installed.
+
+### Cloud server (`internal/cloudserver`, rules in `docs/cloud-server.md`)
+- **`serve`, `admin` and `hook` are dispatched in `main` before config and registry
+  loading.** git runs the hook, and a server has no memories of its own.
+- **The pre-scan of packs is a safety requirement**, not an optimisation:
+  `receive.maxInputSize` does not limit unpacked size.
+- **Startup recovery assumes no earlier git process is alive.**
+- **git accepts every push when the hook file is missing or not executable.** Keep
+  both the startup self-check and the per-push `verifyHook`.
+- Go's `WriteTimeout` also covers reading the request body.
+- A test that looks for leftover processes must match their exact arguments, or it
+  finds the shell that mentions them.
+- In tests the test binary is the push hook and, for the crash test, the server.
+- When changing a push rule, check its test fails without it. A rejection test can
+  pass for the wrong reason, e.g. because the push also lacked an object.
+
 ### Docs
 - GitHub Pages serves from `/docs` on `master` branch
 - Docs must NOT reference machine-specific paths (no `~/.agents/skills` as a default, no `~/handoffs`)

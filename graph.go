@@ -292,7 +292,7 @@ func loadGraphIndex(memoryPath string) (*GraphIndex, error) {
 	return &index, nil
 }
 
-func loadGraphForServe(memoryPath string, index *SearchIndex) (*GraphIndex, map[string]Memory, error) {
+func loadGraphForServe(memoryPath string, memories map[string]Memory) (*GraphIndex, map[string]Memory, error) {
 	graph, err := loadGraphIndex(memoryPath)
 	if err == nil {
 		lookup := make(map[string]Memory, len(graph.Nodes))
@@ -301,15 +301,15 @@ func loadGraphForServe(memoryPath string, index *SearchIndex) (*GraphIndex, map[
 		}
 		return graph, lookup, nil
 	}
-	if index == nil {
-		return nil, nil, fmt.Errorf("graph.json not found and no search index available; run 'memgraph graph-from-dir <dir>'")
+	if memories == nil {
+		return nil, nil, fmt.Errorf("graph.json not found and no memories available; run 'memgraph graph-from-dir <dir>'")
 	}
 	graph = &GraphIndex{
 		Version: 1,
-		Nodes:   make([]Memory, 0, len(index.Memories)),
+		Nodes:   make([]Memory, 0, len(memories)),
 		Edges:   make([]GraphEdge, 0),
 	}
-	for _, m := range index.Memories {
+	for _, m := range memories {
 		graph.Nodes = append(graph.Nodes, m)
 	}
 	sort.Slice(graph.Nodes, func(i, j int) bool { return graph.Nodes[i].ID < graph.Nodes[j].ID })

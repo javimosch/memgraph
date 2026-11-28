@@ -27,8 +27,7 @@ func mcpRecall(cfg *Config, args map[string]any) string {
 	limit := mcpGetInt(args, "limit", 10)
 	tags := mcpGetStringSlice(args, "tags")
 
-	index, err := loadSearchIndex(cfg.MemoryDir)
-	if err != nil {
+	if _, err := os.Stat(cfg.MemoryDir); err != nil {
 		return "No memories found (directory not initialized)."
 	}
 
@@ -41,9 +40,10 @@ func mcpRecall(cfg *Config, args map[string]any) string {
 		searchOpts.Project = projectName
 	}
 
-	results := searchMemories(index, query, searchOpts)
-	if limit > 0 && len(results) > limit {
-		results = results[:limit]
+	searchOpts.Limit = limit
+	results, err := searchMemoryDir(cfg.MemoryDir, query, searchOpts)
+	if err != nil {
+		return fmt.Sprintf("Search failed: %v", err)
 	}
 
 	if len(results) == 0 {
@@ -178,6 +178,7 @@ func mcpSave(cfg *Config, args map[string]any) string {
 
 	memoryID := fmt.Sprintf("%d", time.Now().UTC().UnixNano())
 	filePath := filepath.Join(cfg.MemoryDir, "memory_"+memoryID+".md")
+	defer lockMemoryDir(cfg)()
 	if err := os.MkdirAll(cfg.MemoryDir, 0755); err != nil {
 		return fmt.Sprintf("Failed to create memory directory: %v", err)
 	}
@@ -195,10 +196,9 @@ func mcpSave(cfg *Config, args map[string]any) string {
 	}
 
 	content := formatMemoryFile(memory)
-	if err := os.WriteFile(filePath, []byte(content), 0644); err != nil {
+	if err := writeMemoryBytes(filePath, []byte(content)); err != nil {
 		return fmt.Sprintf("Failed to write memory file: %v", err)
 	}
-	updateSearchIndex(cfg)
 
 	out, _ := json.Marshal(map[string]any{
 		"id":      memoryID,
@@ -219,7 +219,7 @@ func mcpList(cfg *Config, args map[string]any) string {
 	tags := mcpGetStringSlice(args, "tags")
 	limit := mcpGetInt(args, "limit", 50)
 
-	index, err := loadSearchIndex(cfg.MemoryDir)
+	all, err := loadMemories(cfg.MemoryDir)
 	if err != nil {
 		return "No memories found (directory not initialized)."
 	}
@@ -230,7 +230,7 @@ func mcpList(cfg *Config, args map[string]any) string {
 	}
 
 	var memories []Memory
-	for _, memory := range index.Memories {
+	for _, memory := range all {
 		if projectFilter != "" && memory.Project != projectFilter {
 			continue
 		}
@@ -270,6 +270,7 @@ func mcpEdit(cfg *Config, args map[string]any) string {
 	projectName := mcpGetString(args, "project")
 	cfg = resolveMCPConfig(cfg, projectName)
 
+	defer lockMemoryDir(cfg)()
 	memoryFile, ok := findMemoryFileByID(cfg.MemoryDir, id)
 	if !ok {
 		return fmt.Sprintf("Memory %s not found", id)
@@ -304,10 +305,9 @@ func mcpEdit(cfg *Config, args map[string]any) string {
 		memory.Tags = tags
 	}
 
-	if err := os.WriteFile(memoryFile, []byte(formatMemoryFile(memory)), 0644); err != nil {
+	if err := writeMemoryBytes(memoryFile, []byte(formatMemoryFile(memory))); err != nil {
 		return fmt.Sprintf("Cannot write memory file: %v", err)
 	}
-	updateSearchIndex(cfg)
 
 	out, _ := json.Marshal(map[string]any{
 		"id":          id,
@@ -327,6 +327,7 @@ func mcpDelete(cfg *Config, args map[string]any) string {
 	projectName := mcpGetString(args, "project")
 	cfg = resolveMCPConfig(cfg, projectName)
 
+	defer lockMemoryDir(cfg)()
 	memoryFile, ok := findMemoryFileByID(cfg.MemoryDir, id)
 	if !ok {
 		return fmt.Sprintf("Memory %s not found", id)
@@ -350,7 +351,6 @@ func mcpDelete(cfg *Config, args map[string]any) string {
 	if err := os.Remove(memoryFile); err != nil {
 		return fmt.Sprintf("Cannot delete memory file: %v", err)
 	}
-	updateSearchIndex(cfg)
 
 	out, _ := json.Marshal(map[string]any{
 		"id":     id,
@@ -364,13 +364,13 @@ func mcpSessions(cfg *Config, args map[string]any) string {
 	projectName := mcpGetString(args, "project")
 	cfg = resolveMCPConfig(cfg, projectName)
 
-	index, err := loadSearchIndex(cfg.MemoryDir)
+	memories, err := loadMemories(cfg.MemoryDir)
 	if err != nil {
 		return "No memories found (directory not initialized)."
 	}
 
 	groups := map[string]*sessionInfo{}
-	for _, memory := range index.Memories {
+	for _, memory := range memories {
 		info := groups[memory.Session]
 		if info == nil {
 			info = &sessionInfo{Session: memory.Session}
@@ -414,6 +414,7 @@ func mcpImport(cfg *Config, args map[string]any) string {
 		return fmt.Sprintf("Failed to parse import data: %v", err)
 	}
 
+	defer lockMemoryDir(cfg)()
 	_ = os.MkdirAll(cfg.MemoryDir, 0755)
 	imported := 0
 	baseTime := time.Now().UnixNano()
@@ -470,11 +471,10 @@ func mcpImport(cfg *Config, args map[string]any) string {
 		}
 
 		outPath := filepath.Join(cfg.MemoryDir, fmt.Sprintf("memory_%s.md", memoryID))
-		if err := os.WriteFile(outPath, []byte(formatMemoryFile(memory)), 0644); err == nil {
+		if err := writeMemoryBytes(outPath, []byte(formatMemoryFile(memory))); err == nil {
 			imported++
 		}
 	}
-	updateSearchIndex(cfg)
 
 	out, _ := json.Marshal(map[string]any{
 		"imported": imported,

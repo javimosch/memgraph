@@ -21,6 +21,7 @@ func handleSupersede(cfg *Config) {
 	}
 
 	oldID := positional[0]
+	defer lockMemoryDir(cfg)()
 	oldFile, ok := findMemoryFileByID(cfg.MemoryDir, oldID)
 	if !ok {
 		errorResponse(92, "memory_not_found", fmt.Sprintf("Memory with ID %s not found", oldID), false)
@@ -86,7 +87,7 @@ func handleSupersede(cfg *Config) {
 		if session == "" {
 			session = "default"
 		}
-		newID = writeSupersedingMemory(cfg, newText, memoryType, project, session, tags)
+		newID = writeSupersedingMemory(cfg, newText, memoryType, project, session, tags, oldMemory.Local)
 	default:
 		errorResponse(80, "missing_argument", "Replacement required: pass --with <existing-id> or --text <content>", false)
 		os.Exit(80)
@@ -112,12 +113,10 @@ func handleSupersede(cfg *Config) {
 	oldMemory.SupersededBy = newID
 	oldMemory.SupersededAt = now
 	oldMemory.SupersededReason = opts.Reason
-	if err := os.WriteFile(oldFile, []byte(formatMemoryFile(oldMemory)), 0644); err != nil {
+	if err := writeMemoryBytes(oldFile, []byte(formatMemoryFile(oldMemory))); err != nil {
 		errorResponse(110, "write_error", fmt.Sprintf("Cannot write memory file: %v", err), false)
 		os.Exit(110)
 	}
-
-	updateSearchIndex(cfg)
 
 	if jsonOutput {
 		json.NewEncoder(os.Stdout).Encode(map[string]interface{}{
@@ -139,7 +138,8 @@ func handleSupersede(cfg *Config) {
 
 // writeSupersedingMemory stores the replacement without printing, since the
 // supersede command owns the output.
-func writeSupersedingMemory(cfg *Config, content, memoryType, project, session string, tags []string) string {
+// A replacement for a local-only memory stays local.
+func writeSupersedingMemory(cfg *Config, content, memoryType, project, session string, tags []string, local bool) string {
 	timestamp := time.Now().UTC()
 	memoryID := fmt.Sprintf("%d", timestamp.UnixNano())
 	filePath := filepath.Join(cfg.MemoryDir, fmt.Sprintf("memory_%s.md", memoryID))
@@ -162,10 +162,11 @@ func writeSupersedingMemory(cfg *Config, content, memoryType, project, session s
 		Tags:        tags,
 		Created:     timestamp,
 		Content:     content,
+		Local:       local,
 	}
 
 	_ = os.MkdirAll(cfg.MemoryDir, 0755)
-	if err := os.WriteFile(filePath, []byte(formatMemoryFile(memory)), 0644); err != nil {
+	if err := writeMemoryBytes(filePath, []byte(formatMemoryFile(memory))); err != nil {
 		errorResponse(92, "resource_error", fmt.Sprintf("Failed to write replacement memory: %v", err), false)
 		os.Exit(92)
 	}

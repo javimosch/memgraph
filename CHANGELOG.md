@@ -1,5 +1,36 @@
 # Changelog
 
+## 1.12.0 — opt-in cloud sync, and search that needs far less memory
+
+- Search reads the memory files directly instead of keeping
+  `search_index.json`, and uses far less memory: measured on 3,688 memories, a
+  search limited to 10 results went from about 290 MB to 16 MB in similar time.
+  Saving, editing and syncing no longer rebuild anything. Each search reads
+  every file, so very large projects on slow disks may notice. Matches and
+  scores are as before; equal scores now list the newest ID first.
+- Fixed: search could silently miss memories added or changed by `rsync`, git,
+  a hand edit, with `auto_index` off, or after an interrupted rebuild.
+- `auto_index` no longer does anything. Old `search_index.json` files are
+  removed when a memory directory is next read.
+- New `memgraph cloud` commands: opt-in, manual sync of a project between
+  machines through a git smart-HTTP server, with conflict copies, local-only
+  memories, secret scanning and deletion guards. See `docs/cloud-sync.md`.
+- New `memgraph cloud serve` and `memgraph cloud admin` to host projects: git
+  does storage; memgraph adds per-machine tokens, size limits, push rules and
+  upkeep, a startup check that the push rules work, and limits on failed logins
+  and uploads. Not ready for real memories yet; see `docs/cloud-server.md`.
+- New `memgraph cloud admin backup` and `restore` for the server's data.
+- `cloud local <id>` also works on a deleted memory: its ledger history stays on
+  the machine while the deletion syncs.
+- The server uses `core.fsync` with git 2.36 or later.
+- Memory files are now written atomically, and writers lock the memory
+  directory (`.memgraph.lock`). Restart long-running `memgraph mcp` processes
+  after upgrading.
+- New `local: true` memory field. `delete` and `supersede` record it in ledger
+  snapshots.
+- Building memgraph now needs Go 1.26 or later, and it has its first
+  dependency, go-git.
+
 ## 1.11.1 — quieter warnings and a global-flag-friendly command line
 
 - Registry integrity warnings now only fire where a mismatch can actually

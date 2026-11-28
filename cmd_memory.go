@@ -72,13 +72,12 @@ func writeMemoryFromInput(cfg *Config, content, memoryType, project, session str
 		Content:     content,
 	}
 
+	defer lockMemoryDir(cfg)()
 	_ = os.MkdirAll(cfg.MemoryDir, 0755)
-	if err := os.WriteFile(filePath, []byte(formatMemoryFile(memory)), 0644); err != nil {
+	if err := writeMemoryBytes(filePath, []byte(formatMemoryFile(memory))); err != nil {
 		errorResponse(92, "resource_error", fmt.Sprintf("Failed to write memory file: %v", err), false)
 		os.Exit(92)
 	}
-
-	updateSearchIndex(cfg)
 
 	if jsonOutput {
 		json.NewEncoder(os.Stdout).Encode(map[string]interface{}{
@@ -110,7 +109,7 @@ func handleRecall(cfg *Config) {
 		format = "full"
 	}
 
-	index, err := loadSearchIndex(cfg.MemoryDir)
+	memories, err := loadMemoriesIf(query == "", cfg.MemoryDir)
 	if err != nil {
 		errorResponse(92, "resource_not_found", "Memory directory not found", false)
 		os.Exit(92)
@@ -135,7 +134,7 @@ func handleRecall(cfg *Config) {
 	}
 
 	if query == "" {
-		results := listAllMemories(index, searchOpts.Project, searchOpts.Session, searchOpts.Tags, opts.Limit, opts.IncludeSuperseded)
+		results := listAllMemories(memories, searchOpts.Project, searchOpts.Session, searchOpts.Tags, opts.Limit, opts.IncludeSuperseded)
 		if format == "index" || format == "paths" {
 			printSectionIndex(results, cfg.MemoryDir, format)
 		} else {
@@ -155,10 +154,11 @@ func handleRecall(cfg *Config) {
 		return
 	}
 
-	results := searchMemories(index, query, searchOpts)
-	results = filterSuperseded(results, opts.IncludeSuperseded)
-	if opts.Limit > 0 && len(results) > opts.Limit {
-		results = results[:opts.Limit]
+	searchOpts.Limit, searchOpts.HideSuperseded = opts.Limit, !opts.IncludeSuperseded
+	results, err := searchMemoryDir(cfg.MemoryDir, query, searchOpts)
+	if err != nil {
+		errorResponse(92, "resource_not_found", "Memory directory not found", false)
+		os.Exit(92)
 	}
 
 	if len(results) == 0 {
@@ -193,9 +193,9 @@ func handleRecall(cfg *Config) {
 	}
 }
 
-func listAllMemories(index *SearchIndex, project, session string, tags []string, limit int, includeSuperseded bool) []SearchResult {
+func listAllMemories(memories map[string]Memory, project, session string, tags []string, limit int, includeSuperseded bool) []SearchResult {
 	var results []SearchResult
-	for _, memory := range index.Memories {
+	for _, memory := range memories {
 		if project != "" && memory.Project != project {
 			continue
 		}
@@ -438,20 +438,4 @@ func handleRead(cfg *Config) {
 		fmt.Printf("File: %s (content L%d-%d)\n\n", filePath, matched.LineStart, matched.LineEnd)
 		fmt.Println(strings.TrimSpace(sectionContent))
 	}
-}
-
-// filterSuperseded drops replaced beliefs from ranked recall. They stay on
-// disk and stay readable by ID — recall just stops volunteering them.
-func filterSuperseded(results []SearchResult, include bool) []SearchResult {
-	if include {
-		return results
-	}
-	filtered := results[:0]
-	for _, result := range results {
-		if result.SupersededBy != "" {
-			continue
-		}
-		filtered = append(filtered, result)
-	}
-	return filtered
 }

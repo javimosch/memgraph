@@ -15,9 +15,7 @@ jobs:
 
       - uses: actions/setup-go@v6
         with:
-          go-version: "1.22"
-          # No cache: this module has no dependencies (no go.sum), so the
-          # setup-go cache step has nothing to key on and warns otherwise.
+          go-version: "1.26"
 
       - name: Build
         run: go build ./...
@@ -42,7 +40,7 @@ jobs:
 
       - uses: actions/setup-go@v6
         with:
-          go-version: "1.22"
+          go-version: "1.26"
 
       # A tag that disagrees with version.go ships a binary reporting the
       # wrong version, and the tag cannot be moved once anyone has fetched

@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/json"
 	"math"
 	"os"
 	"path/filepath"
@@ -52,77 +51,182 @@ func searchableText(memory Memory) string {
 	return memory.Name + " " + memory.Description + " " + memory.Content + " " + memory.Project + " " + strings.Join(memory.Tags, " ")
 }
 
-func buildSearchIndex(memoryPath string) (*SearchIndex, error) {
-	index := &SearchIndex{
-		Version:       1,
-		TermFreq:      make(map[string]map[string]int),
-		TermPositions: make(map[string]map[string][]int),
-		DocFreq:       make(map[string]int),
-		Memories:      make(map[string]Memory),
+// eachMemory calls fn with every memory in dir, holding one at a time.
+//
+// Nothing is indexed on disk: search reads the files, so it cannot be out of
+// date. An index took several times more memory than the text it covered.
+func eachMemory(dir string, fn func(Memory)) error {
+	files, err := os.ReadDir(dir)
+	if err != nil {
+		return err
+	}
+	// Left by older versions, which trust it even when the files have changed
+	// since. Removing it makes a process still running one rebuild it.
+	_ = os.Remove(filepath.Join(dir, "search_index.json"))
+
+	for _, file := range files {
+		name := file.Name()
+		if file.IsDir() || !strings.HasPrefix(name, "memory_") || !strings.HasSuffix(name, ".md") {
+			continue
+		}
+		content, err := os.ReadFile(filepath.Join(dir, name))
+		if err != nil {
+			continue
+		}
+		if memory := parseMemory(string(content), name); memory.ID != "" {
+			fn(memory)
+		}
+	}
+	return nil
+}
+
+// loadMemories returns every memory in dir by ID.
+func loadMemories(dir string) (map[string]Memory, error) {
+	memories := make(map[string]Memory)
+	err := eachMemory(dir, func(m Memory) { memories[m.ID] = m })
+	if err != nil {
+		return nil, err
+	}
+	return memories, nil
+}
+
+// loadMemoriesIf loads the memories when needed, and otherwise only checks
+// that dir can be read.
+func loadMemoriesIf(needed bool, dir string) (map[string]Memory, error) {
+	if needed {
+		return loadMemories(dir)
+	}
+	_, err := os.ReadDir(dir)
+	return nil, err
+}
+
+// scoredTerms reports which terms of a memory the query can match or score.
+func scoredTerms(q Query) (wanted func(term string) bool, any bool) {
+	exact := make(map[string]bool)
+	for _, terms := range append([][]string{q.Must, q.Exclude}, q.Phrases...) {
+		for _, term := range terms {
+			exact[term] = true
+		}
+	}
+	wanted = func(term string) bool {
+		if exact[term] {
+			return true
+		}
+		for _, prefix := range q.Prefixes {
+			if strings.HasPrefix(term, prefix) {
+				return true
+			}
+		}
+		return false
+	}
+	return wanted, len(exact)+len(q.Prefixes) > 0
+}
+
+// searchMemoryDir ranks the memories of dir against query, best first, and
+// the newest first among equals.
+//
+// A first pass counts how many memories hold each term of the query. The
+// second scores them one at a time and keeps only the matches.
+func searchMemoryDir(dir, query string, opts SearchOptions) ([]SearchResult, error) {
+	wanted, anyTerm := scoredTerms(parseQuery(query))
+	docFreq := make(map[string]int)
+	docCount := 0
+	if anyTerm {
+		err := eachMemory(dir, func(m Memory) {
+			docCount++
+			seen := make(map[string]bool)
+			for _, t := range tokenize(searchableText(m)) {
+				if !seen[t.Term] && wanted(t.Term) {
+					seen[t.Term] = true
+					docFreq[t.Term]++
+				}
+			}
+		})
+		if err != nil {
+			return nil, err
+		}
 	}
 
-	files, err := os.ReadDir(memoryPath)
+	// strict holds memories matching the whole query; fallback those matching
+	// part of it, which are returned only when nothing matches it all.
+	strict := make([]SearchResult, 0)
+	fallback := make([]SearchResult, 0)
+	anyWhole := false
+	keep := func(results []SearchResult, result SearchResult) []SearchResult {
+		if opts.HideSuperseded && result.SupersededBy != "" {
+			return results
+		}
+		results = append(results, result)
+		if opts.Limit > 0 && len(results)/2 >= opts.Limit {
+			rankResults(results)
+			clear(results[opts.Limit:]) // lets their text be freed
+			results = results[:opts.Limit]
+		}
+		return results
+	}
+	err := eachMemory(dir, func(m Memory) {
+		one := &searchDoc{
+			TermFreq:      make(map[string]int),
+			TermPositions: make(map[string][]int),
+			DocFreq:       docFreq,
+			DocCount:      docCount,
+			Memory:        m,
+		}
+		if anyTerm {
+			for _, t := range tokenize(searchableText(m)) {
+				if wanted(t.Term) {
+					one.TermFreq[t.Term]++
+					one.TermPositions[t.Term] = append(one.TermPositions[t.Term], t.Pos)
+				}
+			}
+		}
+		result, whole, ok := scoreMemory(one, query, opts)
+		switch {
+		case !ok:
+		case whole:
+			anyWhole, fallback = true, nil
+			strict = keep(strict, result)
+		case !anyWhole:
+			fallback = keep(fallback, result)
+		}
+	})
 	if err != nil {
 		return nil, err
 	}
 
-	for _, file := range files {
-		if file.IsDir() || strings.HasPrefix(file.Name(), ".") {
-			continue
-		}
-		if !strings.HasPrefix(file.Name(), "memory_") || !strings.HasSuffix(file.Name(), ".md") {
-			continue
-		}
-
-		filePath := filepath.Join(memoryPath, file.Name())
-		content, err := os.ReadFile(filePath)
-		if err != nil {
-			continue
-		}
-
-		memory := parseMemory(string(content), file.Name())
-		if memory.ID == "" {
-			continue
-		}
-
-		tokens := tokenize(searchableText(memory))
-		seen := make(map[string]bool)
-		for _, t := range tokens {
-			if index.TermFreq[t.Term] == nil {
-				index.TermFreq[t.Term] = make(map[string]int)
-			}
-			index.TermFreq[t.Term][memory.ID]++
-
-			if index.TermPositions[t.Term] == nil {
-				index.TermPositions[t.Term] = make(map[string][]int)
-			}
-			index.TermPositions[t.Term][memory.ID] = append(index.TermPositions[t.Term][memory.ID], t.Pos)
-
-			if !seen[t.Term] {
-				index.DocFreq[t.Term]++
-				seen[t.Term] = true
-			}
-		}
-
-		index.Memories[memory.ID] = memory
+	results := strict
+	if !anyWhole {
+		results = append(results, fallback...)
 	}
-
-	index.DocCount = len(index.Memories)
-	return index, nil
+	rankResults(results)
+	if opts.Limit > 0 && len(results) > opts.Limit {
+		results = results[:opts.Limit]
+	}
+	return results, nil
 }
 
-func calculateTFIDF(index *SearchIndex, term string, memoryID string) float64 {
+// rankResults orders the best first, and the newest first among equals.
+func rankResults(results []SearchResult) {
+	sort.Slice(results, func(i, j int) bool {
+		if results[i].Score != results[j].Score {
+			return results[i].Score > results[j].Score
+		}
+		return results[i].MemoryID > results[j].MemoryID
+	})
+}
+
+func calculateTFIDF(index *searchDoc, term string) float64 {
 	if index.DocCount == 0 {
 		return 0
 	}
-	tf := float64(index.TermFreq[term][memoryID])
+	tf := float64(index.TermFreq[term])
 	df := float64(index.DocFreq[term])
 	idf := math.Log(float64(index.DocCount+1) / (df + 1))
 	return tf * idf
 }
 
-func memoryHasTerm(index *SearchIndex, memoryID, term string) bool {
-	return index.TermFreq[term][memoryID] > 0
+func memoryHasTerm(index *searchDoc, term string) bool {
+	return index.TermFreq[term] > 0
 }
 
 func matchesFieldFilters(fields map[string]string, memory Memory) bool {
@@ -156,11 +260,11 @@ func matchesFieldFilters(fields map[string]string, memory Memory) bool {
 	return true
 }
 
-func phraseMatches(index *SearchIndex, memoryID string, phrase []string) (bool, int) {
+func phraseMatches(index *searchDoc, phrase []string) (bool, int) {
 	if len(phrase) == 0 {
 		return true, 0
 	}
-	starts := index.TermPositions[phrase[0]][memoryID]
+	starts := index.TermPositions[phrase[0]]
 	if len(starts) == 0 {
 		return false, 0
 	}
@@ -169,7 +273,7 @@ func phraseMatches(index *SearchIndex, memoryID string, phrase []string) (bool, 
 positions:
 	for _, start := range starts {
 		for i, term := range phrase {
-			positions := index.TermPositions[term][memoryID]
+			positions := index.TermPositions[term]
 			if !containsInt(positions, start+i) {
 				continue positions
 			}
@@ -191,10 +295,10 @@ func containsInt(values []int, target int) bool {
 	return false
 }
 
-func prefixMatchTerms(index *SearchIndex, memoryID, prefix string) []string {
+func prefixMatchTerms(index *searchDoc, prefix string) []string {
 	var matched []string
 	for term := range index.TermFreq {
-		if strings.HasPrefix(term, prefix) && index.TermFreq[term][memoryID] > 0 {
+		if strings.HasPrefix(term, prefix) {
 			matched = append(matched, term)
 		}
 	}
@@ -267,7 +371,7 @@ func tagPhraseMatches(tags []string, phrase []string) (bool, int) {
 	return true, min
 }
 
-func tagTFIDF(index *SearchIndex, term string, tags []string) float64 {
+func tagTFIDF(index *searchDoc, term string, tags []string) float64 {
 	if index.DocCount == 0 {
 		return 0
 	}
@@ -291,32 +395,32 @@ func applyScoreBoosts(score float64, memory Memory, weights SearchWeights) float
 	return score
 }
 
-func termMatches(index *SearchIndex, memoryID string, tagTerms map[string]int, term string, tagOnly bool) bool {
+func termMatches(index *searchDoc, tagTerms map[string]int, term string, tagOnly bool) bool {
 	if tagOnly {
 		return tagTerms[term] > 0
 	}
-	return memoryHasTerm(index, memoryID, term)
+	return memoryHasTerm(index, term)
 }
 
-func prefixMatchForQuery(index *SearchIndex, memoryID string, tags []string, tagTerms map[string]int, prefix string, tagOnly bool) []string {
+func prefixMatchForQuery(index *searchDoc, tags []string, tagTerms map[string]int, prefix string, tagOnly bool) []string {
 	if tagOnly {
 		return tagPrefixMatchTerms(tags, prefix)
 	}
-	return prefixMatchTerms(index, memoryID, prefix)
+	return prefixMatchTerms(index, prefix)
 }
 
-func phraseMatchesForQuery(index *SearchIndex, memoryID string, tags []string, tagTerms map[string]int, phrase []string, tagOnly bool) (bool, int) {
+func phraseMatchesForQuery(index *searchDoc, tags []string, tagTerms map[string]int, phrase []string, tagOnly bool) (bool, int) {
 	if tagOnly {
 		return tagPhraseMatches(tags, phrase)
 	}
-	return phraseMatches(index, memoryID, phrase)
+	return phraseMatches(index, phrase)
 }
 
-func termTFIDF(index *SearchIndex, memoryID string, tags []string, tagTerms map[string]int, term string, tagOnly bool) float64 {
+func termTFIDF(index *searchDoc, tags []string, tagTerms map[string]int, term string, tagOnly bool) float64 {
 	if tagOnly {
 		return tagTFIDF(index, term, tags)
 	}
-	return calculateTFIDF(index, term, memoryID)
+	return calculateTFIDF(index, term)
 }
 
 func memorySearchResult(memoryID string, memory Memory, score float64) SearchResult {
@@ -338,7 +442,9 @@ func memorySearchResult(memoryID string, memory Memory, score float64) SearchRes
 	}
 }
 
-func searchMemories(index *SearchIndex, query string, opts SearchOptions) []SearchResult {
+// scoreMemory scores the memory of index against query. ok reports a match,
+// and whole whether it matched every part of the query.
+func scoreMemory(index *searchDoc, query string, opts SearchOptions) (result SearchResult, whole, ok bool) {
 	q := parseQuery(query)
 	if q.Fields == nil {
 		q.Fields = make(map[string]string)
@@ -360,136 +466,84 @@ func searchMemories(index *SearchIndex, query string, opts SearchOptions) []Sear
 
 	weights := opts.Weights
 	lowerQuery := strings.ToLower(query)
-	strict := make([]SearchResult, 0)
-	fallback := make([]SearchResult, 0)
 	totalRequired := len(q.Must) + len(q.Phrases) + len(q.Prefixes)
 
-	for memoryID, memory := range index.Memories {
-		if !matchesFieldFilters(q.Fields, memory) {
-			continue
-		}
-		if !memoryHasAllTags(memory.Tags, filterTags) {
-			continue
-		}
+	memory := index.Memory
+	if !matchesFieldFilters(q.Fields, memory) || !memoryHasAllTags(memory.Tags, filterTags) {
+		return result, false, false
+	}
 
-		tagTerms := tagTokenCounts(memory.Tags)
-		textLower := strings.ToLower(searchableText(memory))
-		joinedTagsLower := strings.ToLower(strings.Join(memory.Tags, " "))
+	tagTerms := tagTokenCounts(memory.Tags)
+	textLower := strings.ToLower(searchableText(memory))
+	joinedTagsLower := strings.ToLower(strings.Join(memory.Tags, " "))
 
-		excluded := false
-		for _, term := range q.Exclude {
-			if termMatches(index, memoryID, tagTerms, term, opts.TagOnly) {
-				excluded = true
-				break
-			}
-		}
-		if excluded {
-			continue
-		}
-
-		mustMatched := 0
-		for _, term := range q.Must {
-			if termMatches(index, memoryID, tagTerms, term, opts.TagOnly) {
-				mustMatched++
-			}
-		}
-
-		phraseMatched := 0
-		phraseOccurrences := 0
-		for _, phrase := range q.Phrases {
-			ok, n := phraseMatchesForQuery(index, memoryID, memory.Tags, tagTerms, phrase, opts.TagOnly)
-			if ok {
-				phraseMatched++
-				phraseOccurrences += n
-			}
-		}
-
-		prefixMatched := 0
-		var prefixTerms []string
-		for _, prefix := range q.Prefixes {
-			terms := prefixMatchForQuery(index, memoryID, memory.Tags, tagTerms, prefix, opts.TagOnly)
-			if len(terms) > 0 {
-				prefixMatched++
-				prefixTerms = append(prefixTerms, terms...)
-			}
-		}
-
-		mustOK := len(q.Must) == 0 || mustMatched == len(q.Must)
-		phraseOK := phraseMatched == len(q.Phrases)
-		prefixOK := prefixMatched == len(q.Prefixes)
-
-		if mustOK && phraseOK && prefixOK {
-			score := 1.0
-			for _, term := range q.Must {
-				tfidf := termTFIDF(index, memoryID, memory.Tags, tagTerms, term, opts.TagOnly)
-				score += weights.TFIDF * tfidf
-				if tagTerms[term] > 0 {
-					score += weights.Tag * tfidf
-				}
-			}
-			for _, term := range prefixTerms {
-				tfidf := termTFIDF(index, memoryID, memory.Tags, tagTerms, term, opts.TagOnly)
-				score += weights.TFIDF * tfidf
-				if tagTerms[term] > 0 {
-					score += weights.Tag * tfidf
-				}
-			}
-			score += weights.Phrase * float64(phraseOccurrences)
-
-			if opts.TagOnly {
-				if strings.Contains(joinedTagsLower, lowerQuery) {
-					score += weights.Exact
-				}
-			} else {
-				if strings.Contains(textLower, lowerQuery) {
-					score += weights.Exact
-				}
-			}
-
-			score = applyScoreBoosts(score, memory, weights)
-			strict = append(strict, memorySearchResult(memoryID, memory, score))
-		} else if totalRequired > 0 {
-			matched := mustMatched + phraseMatched + prefixMatched
-			if matched > 0 {
-				score := (float64(matched) / float64(totalRequired)) * 2.0
-				score = applyScoreBoosts(score, memory, weights)
-				fallback = append(fallback, memorySearchResult(memoryID, memory, score))
-			}
+	for _, term := range q.Exclude {
+		if termMatches(index, tagTerms, term, opts.TagOnly) {
+			return result, false, false
 		}
 	}
 
-	results := strict
-	if len(results) == 0 {
-		results = fallback
-	}
-
-	sort.Slice(results, func(i, j int) bool {
-		return results[i].Score > results[j].Score
-	})
-	return results
-}
-
-func loadSearchIndex(memoryPath string) (*SearchIndex, error) {
-	indexFile := filepath.Join(memoryPath, "search_index.json")
-	if data, err := os.ReadFile(indexFile); err == nil {
-		var index SearchIndex
-		if err := json.Unmarshal(data, &index); err == nil && index.Version == 1 {
-			return &index, nil
+	mustMatched := 0
+	for _, term := range q.Must {
+		if termMatches(index, tagTerms, term, opts.TagOnly) {
+			mustMatched++
 		}
 	}
 
-	index, err := buildSearchIndex(memoryPath)
-	if err == nil {
-		_ = saveSearchIndex(memoryPath, index)
+	phraseMatched := 0
+	phraseOccurrences := 0
+	for _, phrase := range q.Phrases {
+		matches, n := phraseMatchesForQuery(index, memory.Tags, tagTerms, phrase, opts.TagOnly)
+		if matches {
+			phraseMatched++
+			phraseOccurrences += n
+		}
 	}
-	return index, err
-}
 
-func saveSearchIndex(memoryPath string, index *SearchIndex) error {
-	indexFile := filepath.Join(memoryPath, "search_index.json")
-	data, err := json.MarshalIndent(index, "", "  ")
-	if err != nil {
-		return err
+	prefixMatched := 0
+	var prefixTerms []string
+	for _, prefix := range q.Prefixes {
+		terms := prefixMatchForQuery(index, memory.Tags, tagTerms, prefix, opts.TagOnly)
+		if len(terms) > 0 {
+			prefixMatched++
+			prefixTerms = append(prefixTerms, terms...)
+		}
 	}
-	return os.WriteFile(indexFile, data, 0644)
+
+	mustOK := len(q.Must) == 0 || mustMatched == len(q.Must)
+	phraseOK := phraseMatched == len(q.Phrases)
+	prefixOK := prefixMatched == len(q.Prefixes)
+
+	if mustOK && phraseOK && prefixOK {
+		// A fixed order, so that a score does not vary in its last digit.
+		sort.Strings(prefixTerms)
+		score := 1.0
+		for _, term := range append(append([]string{}, q.Must...), prefixTerms...) {
+			tfidf := termTFIDF(index, memory.Tags, tagTerms, term, opts.TagOnly)
+			score += weights.TFIDF * tfidf
+			if tagTerms[term] > 0 {
+				score += weights.Tag * tfidf
+			}
+		}
+		score += weights.Phrase * float64(phraseOccurrences)
+
+		exactIn := textLower
+		if opts.TagOnly {
+			exactIn = joinedTagsLower
+		}
+		if strings.Contains(exactIn, lowerQuery) {
+			score += weights.Exact
+		}
+
+		score = applyScoreBoosts(score, memory, weights)
+		return memorySearchResult(memory.ID, memory, score), true, true
+	}
+
+	matched := mustMatched + phraseMatched + prefixMatched
+	if matched == 0 {
+		return result, false, false
+	}
+	score := (float64(matched) / float64(totalRequired)) * 2.0
+	score = applyScoreBoosts(score, memory, weights)
+	return memorySearchResult(memory.ID, memory, score), false, true
 }
