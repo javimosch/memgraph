@@ -149,7 +149,7 @@ func writeSupersedingMemory(cfg *Config, content, memoryType, project, session s
 		description = description[:idx]
 	}
 	if len(description) > 50 {
-		description = description[:50] + "..."
+		description = cutText(description, 50) + "..."
 	}
 
 	memory := Memory{

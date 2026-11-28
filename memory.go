@@ -193,7 +193,7 @@ func parseSections(content string) []Section {
 func truncatePreview(s string) string {
 	s = strings.TrimSpace(s)
 	if len(s) > 120 {
-		return s[:120] + "..."
+		return cutText(s, 120) + "..."
 	}
 	return s
 }

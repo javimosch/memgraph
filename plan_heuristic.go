@@ -106,7 +106,7 @@ func extractPlanDescription(text string) string {
 	}
 	desc := strings.Join(descLines, " ")
 	if len(desc) > 120 {
-		desc = desc[:120] + "..."
+		desc = cutText(desc, 120) + "..."
 	}
 	return desc
 }

@@ -384,16 +384,10 @@ func mcpSetup(cfg *Config, args map[string]any) string {
 		return "Error: sync_dir is required"
 	}
 
-	// Delegate to the existing handler by setting up the config
-	// The setup handler reads os.Args, so we need to work around that.
-	// Instead, we generate the AGENTS.md content directly.
-	content := generateAgentsMdContent(cfg, syncDir)
 	agentsPath := filepath.Join(cfg.ProjectRoot, "AGENTS.md")
-	if cfg.ProjectRoot == "" {
-		agentsPath = "AGENTS.md"
-	}
 
-	if err := os.WriteFile(agentsPath, []byte(content), 0644); err != nil {
+	// The same section the command line adds; the rest of the file is the user's.
+	if err := upsertFileSection(agentsPath, "## Memgraph — Skill Discovery", agentsMDSnippet); err != nil {
 		return fmt.Sprintf("Failed to write AGENTS.md: %v", err)
 	}
 
@@ -426,21 +420,6 @@ func mcpFeedback(cfg *Config, args map[string]any) string {
 		"message": message,
 	})
 	return string(out)
-}
-
-// generateAgentsMdContent creates the AGENTS.md content for setup.
-func generateAgentsMdContent(cfg *Config, syncDir string) string {
-	return fmt.Sprintf(`# AGENTS.md — memgraph
-
-## Build & Run
-`+"```bash"+`
-go build -o memgraph .
-./memgraph serve --sync-dir %s --port 8080
-`+"```"+`
-
-## Skill Discovery
-- Skills are auto-synced from %s
-`, syncDir, syncDir)
 }
 
 // mcpFeedbackSubmit is a stub that always succeeds (best-effort).

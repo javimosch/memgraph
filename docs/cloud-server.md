@@ -3,7 +3,8 @@
 Host memgraph cloud projects for your own machines. For the client, see
 [cloud-sync.md](cloud-sync.md).
 
-**Status: new in 1.12.0 and not yet ready for real memories.** See "Not done yet".
+**Status: experimental, paused, and not ready for real memories.** It shipped in
+1.12.0 and is not under active development. See "Not done yet".
 
 It is the same `memgraph` program. git does storage and transfer; memgraph adds access
 control, size limits, push rules and upkeep. It is unrelated to `memgraph serve`, the

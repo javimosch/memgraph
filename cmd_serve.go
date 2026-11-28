@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io/fs"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -168,13 +169,28 @@ func (s *serverState) checkAndSync() {
 	}
 }
 
-func handleServe(cfg *Config) {
-	_, opts := parseCommandArgs(os.Args[2:])
+// serveAddress returns where serve listens, and whether only this machine can
+// reach it. The web view has no login, so that is the default.
+func serveAddress(opts CommandOptions) (addr string, local bool) {
 	port := opts.Port
 	if port == 0 {
 		port = 8080
 	}
-	addr := fmt.Sprintf("0.0.0.0:%d", port)
+	host := opts.Host
+	if host == "" {
+		host = "127.0.0.1"
+	}
+	ip := net.ParseIP(host)
+	local = host == "localhost" || ip != nil && ip.IsLoopback()
+	return net.JoinHostPort(host, strconv.Itoa(port)), local
+}
+
+func handleServe(cfg *Config) {
+	_, opts := parseCommandArgs(os.Args[2:])
+	addr, local := serveAddress(opts)
+	if !local {
+		log.Printf("warning: the web view has no login; anyone who can reach %s can read what it shows", addr)
+	}
 
 	memories, err := loadMemories(cfg.MemoryDir)
 	if err != nil {

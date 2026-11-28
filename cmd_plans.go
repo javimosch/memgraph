@@ -306,7 +306,7 @@ func parsePlanWithPattern(planDir, planPath string, p planPattern) planInput {
 		content = planText
 	}
 	if len(content) > 1000 {
-		content = content[:1000]
+		content = cutText(content, 1000)
 	}
 
 	// Derive project from parent directory name

@@ -71,7 +71,7 @@ func guideData() map[string]interface{} {
 				"memgraph plans --json",
 			},
 			"integration": []string{
-				"memgraph serve [--sync-dir <dir>] [--port <n>]",
+				"memgraph serve [--sync-dir <dir>] [--port <n>] [--host <ip>]",
 				"memgraph watch [--sync-dir <dir>] [--poll-interval <sec>]",
 				"memgraph mcp",
 				"memgraph bridge claude-code|opencode|copilot",

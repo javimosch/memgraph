@@ -379,7 +379,7 @@ func worstVerdict(claims []Claim) string {
 func condense(s string) string {
 	s = strings.Join(strings.Fields(s), " ")
 	if len(s) > 90 {
-		return s[:90] + "..."
+		return cutText(s, 90) + "..."
 	}
 	return s
 }

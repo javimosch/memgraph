@@ -1,7 +1,9 @@
 package main
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -141,23 +143,31 @@ func handleSetup(cfg *Config) {
 		}
 	}
 
-	// 4. Run bridge for detected agent ecosystems
-	if _, err := os.Stat(filepath.Join(cwd, ".claude")); err == nil {
-		generateClaudeCodeBridge(cfg)
-		actions = append(actions, "Updated .claude/CLAUDE.md bridge")
-	}
-	if _, err := os.Stat(filepath.Join(cwd, ".opencode")); err == nil {
-		generateOpenCodeBridge(cfg)
-		actions = append(actions, "Updated .opencode bridge")
-	}
-	if _, err := os.Stat(filepath.Join(cwd, ".copilot")); err == nil {
-		generateCopilotBridge(cfg)
-		actions = append(actions, "Updated .copilot bridge")
+	// 4. Run bridge for detected agent ecosystems. A file that is already
+	// there stays as it is.
+	for _, bridge := range []struct {
+		dir   string
+		write func(*Config) (string, error)
+	}{
+		{".claude", writeClaudeCodeBridge},
+		{".opencode", writeOpenCodeBridge},
+		{".copilot", writeCopilotBridge},
+	} {
+		if _, err := os.Stat(filepath.Join(cwd, bridge.dir)); err != nil {
+			continue
+		}
+		if path, err := bridge.write(cfg); errors.Is(err, errBridgeExists) {
+			actions = append(actions, "Left the existing "+path+" unchanged")
+		} else if err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to write %s: %v\n", path, err)
+		} else {
+			actions = append(actions, "Wrote "+path+" bridge")
+		}
 	}
 
 	// 5. Output
 	if jsonOutput {
-		fmt.Printf(`{"status":"ok","actions":[`, )
+		fmt.Printf(`{"status":"ok","actions":[`)
 		for i, a := range actions {
 			if i > 0 {
 				fmt.Print(",")
@@ -204,33 +214,30 @@ func upsertFileSection(path, heading, sectionContent string) error {
 	heading = strings.TrimSpace(heading)
 
 	var existing string
-	if data, err := os.ReadFile(path); err == nil {
-		existing = string(data)
+	data, err := os.ReadFile(path)
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return err // never replace a file that could not be read
 	}
+	existing = string(data)
 
-	// Check if section already exists
-	if strings.Contains(existing, heading) {
-		// Replace existing section
-		lines := strings.Split(existing, "\n")
-		var result []string
-		skipping := false
-		for _, line := range lines {
-			if strings.TrimSpace(line) == heading {
-				skipping = true
-				// Write the new section content
-				result = append(result, sectionContent)
-				continue
-			}
-			if skipping {
-				// Skip until next ## heading or end of file
-				if strings.HasPrefix(strings.TrimSpace(line), "## ") && strings.TrimSpace(line) != heading {
-					skipping = false
-					result = append(result, line)
-				}
-				continue
-			}
-			result = append(result, line)
+	// Replace the section if it is there: from its heading to the next heading
+	// of level 1 or 2. A "#" line inside a code block is not a heading.
+	lines := strings.Split(existing, "\n")
+	for start, line := range lines {
+		if strings.TrimSpace(line) != heading {
+			continue
 		}
+		end, fenced := start+1, false
+		for ; end < len(lines); end++ {
+			t := strings.TrimSpace(lines[end])
+			if strings.HasPrefix(t, "```") {
+				fenced = !fenced
+			} else if !fenced && (strings.HasPrefix(t, "# ") || strings.HasPrefix(t, "## ")) {
+				break
+			}
+		}
+		section := strings.TrimRight(sectionContent, "\n")
+		result := append(append(append([]string{}, lines[:start]...), section, ""), lines[end:]...)
 		return os.WriteFile(path, []byte(strings.Join(result, "\n")), 0644)
 	}
 

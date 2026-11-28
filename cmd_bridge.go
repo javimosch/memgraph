@@ -2,11 +2,62 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
+	"path/filepath"
 )
 
-func generateClaudeCodeBridge(cfg *Config) {
+var errBridgeExists = errors.New("the file already exists with other content, so it was left unchanged; " +
+	"move it aside and run the command again, then copy back what you need")
+
+// writeBridgeFile creates path. These are files an agent's user writes in too,
+// so one that already exists with other content is never replaced.
+func writeBridgeFile(path, content string) (err error) {
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		return err
+	}
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0644)
+	if errors.Is(err, fs.ErrExist) {
+		old, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		if string(old) != content {
+			return errBridgeExists
+		}
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	defer func() { err = errors.Join(err, f.Close()) }()
+	_, err = f.WriteString(content)
+	return err
+}
+
+// runBridge writes one bridge file for the command line.
+func runBridge(cfg *Config, agent, label, hint string, write func(*Config) (string, error)) {
+	path, err := write(cfg)
+	if err != nil {
+		errorResponse(92, "resource_error", fmt.Sprintf("%s: %v", path, err), false)
+		os.Exit(92)
+	}
+	if jsonOutput {
+		json.NewEncoder(os.Stdout).Encode(map[string]interface{}{
+			"status":      "bridge_created",
+			"agent":       agent,
+			"config_file": path,
+		})
+		return
+	}
+	fmt.Printf("%s bridge created successfully!\n", label)
+	fmt.Printf("Configuration file: %s\n", path)
+	fmt.Fprintln(os.Stderr, hint)
+}
+
+func writeClaudeCodeBridge(cfg *Config) (string, error) {
 	claudeMDContent := fmt.Sprintf(`# Memgraph Integration for Claude Code
 
 This file provides project-specific memory for Claude Code via memgraph CLI.
@@ -69,30 +120,10 @@ The following bridge commands are available:
 - /mg config - Show configuration and storage location
 `, cfg.MemoryDir)
 
-	claudeMDPath := ".claude/CLAUDE.md"
-	if err := os.MkdirAll(".claude", 0755); err != nil {
-		errorResponse(92, "resource_error", fmt.Sprintf("Failed to create .claude directory: %v", err), false)
-		os.Exit(92)
-	}
-	if err := os.WriteFile(claudeMDPath, []byte(claudeMDContent), 0644); err != nil {
-		errorResponse(92, "resource_error", fmt.Sprintf("Failed to write CLAUDE.md: %v", err), false)
-		os.Exit(92)
-	}
-
-	if jsonOutput {
-		json.NewEncoder(os.Stdout).Encode(map[string]interface{}{
-			"status":      "bridge_created",
-			"agent":       "claude-code",
-			"config_file": claudeMDPath,
-		})
-	} else {
-		fmt.Println("Claude Code bridge created successfully!")
-		fmt.Printf("Configuration file: %s\n", claudeMDPath)
-		fmt.Fprintf(os.Stderr, "Add the bridge commands to your Claude Code workflow.\n")
-	}
+	return ".claude/CLAUDE.md", writeBridgeFile(".claude/CLAUDE.md", claudeMDContent)
 }
 
-func generateOpenCodeBridge(cfg *Config) {
+func writeOpenCodeBridge(cfg *Config) (string, error) {
 	opencodeConfig := fmt.Sprintf(`# Memgraph Integration for OpenCode
 
 ## Skill Discovery (IMPORTANT — run before starting any task)
@@ -138,30 +169,10 @@ memgraph remember "Project-specific context"
 %%
 `, cfg.MemoryDir)
 
-	configPath := ".opencode/memory.json"
-	if err := os.MkdirAll(".opencode", 0755); err != nil {
-		errorResponse(92, "resource_error", fmt.Sprintf("Failed to create .opencode directory: %v", err), false)
-		os.Exit(92)
-	}
-	if err := os.WriteFile(configPath, []byte(opencodeConfig), 0644); err != nil {
-		errorResponse(92, "resource_error", fmt.Sprintf("Failed to write config: %v", err), false)
-		os.Exit(92)
-	}
-
-	if jsonOutput {
-		json.NewEncoder(os.Stdout).Encode(map[string]interface{}{
-			"status":      "bridge_created",
-			"agent":       "opencode",
-			"config_file": configPath,
-		})
-	} else {
-		fmt.Println("OpenCode bridge created successfully!")
-		fmt.Printf("Configuration file: %s\n", configPath)
-		fmt.Fprintf(os.Stderr, "Add the configuration to your OpenCode setup.\n")
-	}
+	return ".opencode/memory.json", writeBridgeFile(".opencode/memory.json", opencodeConfig)
 }
 
-func generateCopilotBridge(cfg *Config) {
+func writeCopilotBridge(cfg *Config) (string, error) {
 	copilotConfig := fmt.Sprintf(`# Memgraph Integration for GitHub Copilot
 
 ## Skill Discovery (IMPORTANT — run before starting any task)
@@ -207,25 +218,5 @@ memgraph remember "Important project context"
 %%
 `, cfg.MemoryDir)
 
-	configPath := ".copilot/settings.json"
-	if err := os.MkdirAll(".copilot", 0755); err != nil {
-		errorResponse(92, "resource_error", fmt.Sprintf("Failed to create .copilot directory: %v", err), false)
-		os.Exit(92)
-	}
-	if err := os.WriteFile(configPath, []byte(copilotConfig), 0644); err != nil {
-		errorResponse(92, "resource_error", fmt.Sprintf("Failed to write config: %v", err), false)
-		os.Exit(92)
-	}
-
-	if jsonOutput {
-		json.NewEncoder(os.Stdout).Encode(map[string]interface{}{
-			"status":      "bridge_created",
-			"agent":       "copilot",
-			"config_file": configPath,
-		})
-	} else {
-		fmt.Println("Copilot bridge created successfully!")
-		fmt.Printf("Configuration file: %s\n", configPath)
-		fmt.Fprintf(os.Stderr, "Add the configuration to your Copilot settings.\n")
-	}
+	return ".copilot/settings.json", writeBridgeFile(".copilot/settings.json", copilotConfig)
 }

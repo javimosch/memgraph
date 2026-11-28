@@ -17,6 +17,7 @@ type CommandOptions struct {
 	WeightsJSON  string
 	Limit        int
 	Port         int
+	Host         string
 	Text         string
 	TextSet      bool
 	Query        string
@@ -102,6 +103,15 @@ func parseCommandArgs(args []string) ([]string, CommandOptions) {
 			if n, err := strconv.Atoi(strings.TrimPrefix(arg, "--limit=")); err == nil && n >= 0 {
 				opts.Limit = n
 			}
+			continue
+		case arg == "--host":
+			if i+1 < len(args) && !strings.HasPrefix(args[i+1], "--") {
+				opts.Host = args[i+1]
+				i++
+			}
+			continue
+		case strings.HasPrefix(arg, "--host="):
+			opts.Host = strings.TrimPrefix(arg, "--host=")
 			continue
 		case arg == "--port":
 			if i+1 < len(args) && !strings.HasPrefix(args[i+1], "--") {
