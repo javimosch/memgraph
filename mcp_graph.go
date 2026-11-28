@@ -184,7 +184,7 @@ func mcpRelated(cfg *Config, args map[string]any) string {
 
 // mcpPlans implements the memgraph_plans tool.
 func mcpPlans(cfg *Config) string {
-	graph, err := loadGraphIndex(cfg.MemoryDir)
+	graph, _, err := loadGraphForQuery(cfg)
 	if err != nil {
 		return "No skill graph found. Run memgraph_graph_from_dir to build one."
 	}

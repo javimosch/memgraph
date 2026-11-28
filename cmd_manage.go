@@ -153,7 +153,7 @@ func handleEdit(cfg *Config) {
 	memory := parseMemory(string(content), filepath.Base(memoryFile))
 	description := newContent
 	if len(description) > 50 {
-		description = description[:50] + "..."
+		description = cutText(description, 50) + "..."
 	}
 	if idx := strings.Index(description, "\n"); idx != -1 && idx < 50 {
 		description = description[:idx]

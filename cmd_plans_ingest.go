@@ -11,7 +11,8 @@ import (
 
 // handlePlansList lists all indexed plans in the graph.
 func handlePlansList(cfg *Config) {
-	graph, err := loadGraphIndex(cfg.MemoryDir)
+	// The graph recommend uses: plans indexed for all projects are in the global one.
+	graph, _, err := loadGraphForQuery(cfg)
 	if err != nil {
 		errorResponse(92, "resource_error", "Failed to load graph: "+err.Error(), false)
 		os.Exit(92)
@@ -48,7 +49,7 @@ func handlePlansList(cfg *Config) {
 
 func truncate(s string, n int) string {
 	if len(s) > n {
-		return s[:n] + "..."
+		return cutText(s, n) + "..."
 	}
 	return s
 }

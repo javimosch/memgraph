@@ -284,7 +284,7 @@ func mcpEdit(cfg *Config, args map[string]any) string {
 	memory := parseMemory(string(data), filepath.Base(memoryFile))
 	description := newContent
 	if len(description) > 50 {
-		description = description[:50] + "..."
+		description = cutText(description, 50) + "..."
 	}
 	if idx := strings.Index(description, "\n"); idx != -1 && idx < 50 {
 		description = description[:idx]

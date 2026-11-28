@@ -119,11 +119,11 @@ func handleBridge(cfg *Config) {
 	agent := args[0]
 	switch agent {
 	case "claude-code":
-		generateClaudeCodeBridge(cfg)
+		runBridge(cfg, "claude-code", "Claude Code", "Add the bridge commands to your Claude Code workflow.", writeClaudeCodeBridge)
 	case "opencode":
-		generateOpenCodeBridge(cfg)
+		runBridge(cfg, "opencode", "OpenCode", "Add the configuration to your OpenCode setup.", writeOpenCodeBridge)
 	case "copilot":
-		generateCopilotBridge(cfg)
+		runBridge(cfg, "copilot", "Copilot", "Add the configuration to your Copilot settings.", writeCopilotBridge)
 	default:
 		if jsonOutput {
 			errorResponse(85, "invalid_argument", fmt.Sprintf("Unknown agent: %s. Available agents: claude-code, opencode, copilot", agent), false)
