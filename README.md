@@ -232,7 +232,7 @@ Generate instruction files for your AI agents (`.claude/CLAUDE.md`,
 other content is **left unchanged**, and the command exits with 92.
 
 `memgraph setup` indexes your skill directories, adds or updates one section of
-`AGENTS.md`, writes `.devin/skills/memgraph-usage/SKILL.md` (replacing that file), and
+`AGENTS.md`, writes `.devin/skills/memgraph-usage/SKILL.md` if it is missing, and
 creates the bridge files that are missing for the agent folders it finds.
 
 ```bash

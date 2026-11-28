@@ -88,6 +88,16 @@ func parseSyncDirs(raw string) []string {
 	return dirs
 }
 
+// graphDir is where synced skills are written: the global skill graph, as for
+// watch and setup, unless --memory-dir names another folder. Never the memory
+// folder of the project serve was started in.
+func (s *serverState) graphDir() string {
+	if memoryDir != "" {
+		return s.cfg.MemoryDir
+	}
+	return filepath.Join(getGlobalMemgraphDir(), "skills-graph")
+}
+
 func (s *serverState) syncNow() error {
 	if len(s.syncDirs) == 0 {
 		return nil
@@ -107,17 +117,18 @@ func (s *serverState) syncNow() error {
 		return fmt.Errorf("no sync directories found")
 	}
 
-	graph, skillCount, namespaceCount, err := ingestMultiDir(resolvedDirs, s.cfg.MemoryDir, s.cfg)
+	target := s.graphDir()
+	graph, skillCount, namespaceCount, err := ingestMultiDir(resolvedDirs, target, s.cfg)
 	if err != nil {
 		return err
 	}
 
-	memories, err := loadMemories(s.cfg.MemoryDir)
+	memories, err := loadMemories(target)
 	if err != nil {
 		memories = s.memories
 	}
 
-	newGraph, newNodeMap, err := loadGraphForServe(s.cfg.MemoryDir, memories)
+	newGraph, newNodeMap, err := loadGraphForServe(target, memories)
 	if err != nil {
 		newGraph = &GraphIndex{Version: 1, Nodes: graph.Nodes, Edges: graph.Edges}
 		newNodeMap = make(map[string]Memory, len(graph.Nodes))

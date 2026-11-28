@@ -492,9 +492,7 @@ func mcpInit(cfg *Config, args map[string]any) string {
 		return fmt.Sprintf("Failed to create memory directory: %v", err)
 	}
 
-	indexPath := filepath.Join(cfg.MemoryDir, "MEMORY.md")
-	indexContent := "# Memory Index\nThis file contains pointers to all project memories.\nLast updated: " + time.Now().Format(time.RFC3339) + "\n\n"
-	if err := os.WriteFile(indexPath, []byte(indexContent), 0644); err != nil {
+	if err := ensureMemoryDir(cfg.MemoryDir); err != nil {
 		return fmt.Sprintf("Failed to create index file: %v", err)
 	}
 

@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.12.2 — serve no longer deletes memories
+
+- **Fixed, data loss:** `memgraph serve`, run in a project, deleted that
+  project's memories when it synced skills, which it does by default when it
+  finds skill directories. No ledger entry was written. `serve --memory-dir` and
+  `graph-from-dir --memory-dir` did the same to the named folder. A graph build
+  now removes and replaces only files that a graph build wrote, never a saved
+  memory, and `serve` writes synced skills to the global skill graph. **Do not
+  run `serve` with 1.12.1 or earlier.** If you did, look for the memories in a
+  backup or in version control.
+- Fixed: `init` (command line and MCP) replaced an existing `MEMORY.md`.
+- Fixed: `setup` replaced an edited `.devin/skills/memgraph-usage/SKILL.md`.
+- Fixed: a section heading quoted in a code block of `AGENTS.md` could be taken
+  for memgraph's section.
+
 ## 1.12.1 — stabilisation: local-only web view, and files left alone
 
 - **Changed:** `serve` now listens only on `127.0.0.1`. It has no login, and used
